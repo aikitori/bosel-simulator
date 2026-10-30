@@ -38,7 +38,7 @@ const MIN_GAP = 6;
  * Verteilt wird nach Fläche: Auf einem 2-m-Weg liegen nur zwei Fünftel so viele, und keines
  * ist so groß, dass es den Weg ganz sperrt.
  */
-export function placeObstacles(course: Course, seed: number, perKm = 28): Obstacle[] {
+export function placeObstacles(course: Course, seed: number, perKm = 14): Obstacle[] {
   const rand = mulberry32(seed);
   const out: Obstacle[] = [];
   const count = Math.round((course.length / 1000) * perKm);

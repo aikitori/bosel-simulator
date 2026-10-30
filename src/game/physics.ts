@@ -18,8 +18,6 @@ const ROLL: Record<Surface | 'verge', number> = {
   dirt: 0.22,
   verge: 0.32,
 };
-/** Dachprofil der Fahrbahn: die Kugel driftet zu den Rändern. */
-const CAMBER = 0.012;
 /** Seitliche Beschleunigung durch vollen Drall (m/s²) und wie schnell er nachlässt (s). */
 const SPIN_ACCEL = 0.09;
 const SPIN_DECAY = 6;
@@ -29,8 +27,6 @@ const CURB_HEIGHT = 0.12;
 const CURB_BOUNCE = 0.45;
 /** Zusätzliches Bremsen im Wasser einer Pfütze (Anteil von g). */
 const PUDDLE_DRAG = 1.1;
-/** Bankette fällt zum Graben hin ab. */
-const VERGE_SLOPE = 0.06;
 
 export interface ThrowInput {
   /** Abweichung von der Straßenrichtung im Bogenmaß, positiv = nach links. */
@@ -47,6 +43,31 @@ export interface ThrowInput {
 }
 
 /** Flacher Abwurf, bei dem die Kugel am weitesten rollt. */
+/**
+ * Stellschrauben des Abwurfs an einer Stelle – die Werte sind per Simulation verschiedener
+ * Spielertypen abgestimmt (siehe test/throw-tuning.test.ts).
+ */
+export const TUNING = {
+  /** Abwurftempo m/s: Grundwert + Anteil der Kraft. */
+  baseSpeed: 8,
+  powerSpeed: 18,
+  /** Wie stark ein Zeitfehler (s) den Abwurfwinkel ändert, mit Grenzen (rad). */
+  timingPitch: 1.1,
+  pitchMin: -0.2,
+  pitchMax: 0.6,
+  /** Tempoverlust je Sekunde zu früh/zu spät, mit Untergrenzen. */
+  earlyLoss: 1.1,
+  earlyFloor: 0.6,
+  lateLoss: 0.4,
+  lateFloor: 0.75,
+  /** Querneigung der Fahrbahn (Anteil von g am Rand). */
+  camber: 0.004,
+  /** Neigung der Bankette zum Graben hin (Anteil von g). */
+  vergeSlope: 0.02,
+  /** Unebenheiten: Stärke der kleinen seitlichen Schubser beim Rollen (m/s²). */
+  bumps: 0.08,
+};
+
 export function idealPitch(power: number): number {
   return 0.09 + 0.06 * power;
 }
@@ -56,12 +77,14 @@ export function idealPitch(power: number): number {
  * zu früh → Kugel wird in den Boden geschlagen, zu spät → hoher Bogen, der kaum rollt.
  */
 export function pitchFromTiming(timing: number, power: number): number {
-  return idealPitch(power) + Math.max(-0.2, Math.min(0.6, timing * 1.1));
+  return idealPitch(power) + Math.max(TUNING.pitchMin, Math.min(TUNING.pitchMax, timing * TUNING.timingPitch));
 }
 
 /** Zu früh hat der Arm noch nicht durchgezogen, zu spät bremst er schon: weniger Tempo. */
 export function speedFromTiming(timing: number): number {
-  return timing < 0 ? Math.max(0.6, 1 - 1.1 * -timing) : Math.max(0.75, 1 - 0.4 * timing);
+  return timing < 0
+    ? Math.max(TUNING.earlyFloor, 1 - TUNING.earlyLoss * -timing)
+    : Math.max(TUNING.lateFloor, 1 - TUNING.lateLoss * timing);
 }
 
 export type TimingGrade = 'perfect' | 'good' | 'early' | 'late';
@@ -96,7 +119,7 @@ export interface ThrowResult {
 }
 
 export function launchSpeed(power: number): number {
-  return 8 + 18 * Math.max(0, Math.min(1, power));
+  return TUNING.baseSpeed + TUNING.powerSpeed * Math.max(0, Math.min(1, power));
 }
 
 /**
@@ -270,9 +293,9 @@ export function simulateThrow(
       const nx = -(seg.y - a0.y) / sl;
       const ny = (seg.x - a0.x) / sl;
       const side = Math.sign(pos.d) || 1;
-      const tilt = (onRoad ? CAMBER * (ad / Math.max(hw, 0.5)) : VERGE_SLOPE) * G * side;
+      const tilt = (onRoad ? TUNING.camber * (ad / Math.max(hw, 0.5)) : TUNING.vergeSlope) * G * side;
       // Unebenheiten: alle 0,2 s ein neuer kleiner seitlicher Schubs
-      if (step % 48 === 0) noise = (rand() - 0.5) * 0.2;
+      if (step % 48 === 0) noise = (rand() - 0.5) * TUNING.bumps;
       // Drall: Kraft quer zur Laufrichtung, lässt mit der Zeit nach
       const curl = (input.spin ?? 0) * SPIN_ACCEL * Math.exp(-(step * DT) / SPIN_DECAY);
       const ax = (-vx / v) * mu * G + nx * (tilt + noise) + (-vy / v) * curl;

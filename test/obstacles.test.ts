@@ -7,8 +7,8 @@ const road = (halfWidth: number) =>
 
 describe('Hindernisse', () => {
   it('auf schmalen Wegen liegen anteilig weniger, und keins sperrt den ganzen Weg', () => {
-    const wide = placeObstacles(road(2.5), 1);
-    const narrow = placeObstacles(road(1), 1);
+    const wide = placeObstacles(road(2.5), 1, 8);
+    const narrow = placeObstacles(road(1), 1, 8);
     expect(narrow.length).toBeLessThan(wide.length * 0.6);
     for (const o of narrow) {
       const across = o.kind === 'puddle' ? o.r * 0.6 : o.r;

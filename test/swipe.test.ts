@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluate } from '../src/game/SwipeInput';
+import { angleForYaw, evaluate, yawFromAngle } from '../src/game/SwipeInput';
 
 /** Gerader Strich von (x0,y0) nach (x1,y1) in `ms` Millisekunden, danach `pause` ms stillhalten. */
 const stroke = (x0: number, y0: number, x1: number, y1: number, ms: number, pause = 0) => {
@@ -12,7 +12,7 @@ const stroke = (x0: number, y0: number, x1: number, y1: number, ms: number, paus
 describe('Wischgeste', () => {
   it('schräg nach rechts oben wirft nach rechts (negativer Winkel)', () => {
     const r = evaluate(stroke(200, 800, 300, 500, 150), 900)!;
-    expect(r.yaw).toBeLessThan(-0.1);
+    expect(r.yaw).toBeLessThan(-0.02);
     expect(r.power).toBeGreaterThan(0.3);
   });
 
@@ -21,7 +21,7 @@ describe('Wischgeste', () => {
     const paused = evaluate(stroke(200, 800, 120, 500, 150, 120), 900)!;
     expect(paused.yaw).toBeCloseTo(quick.yaw, 5);
     expect(paused.power).toBeCloseTo(quick.power, 1);
-    expect(paused.yaw).toBeGreaterThan(0.1);
+    expect(paused.yaw).toBeGreaterThan(0.01);
   });
 
   it('langsames Schieben ist kein Wurf', () => {
@@ -48,5 +48,11 @@ describe('Wischgeste', () => {
     pts.push({ x: 200, y: 380, t: 1065 });
     const r = evaluate(pts, 900)!;
     expect(r.power).toBe(1);
+  });
+
+  it('kleine Wischfehler beim Geradeauswerfen wirken kaum, große Winkel zielen trotzdem', () => {
+    expect(Math.abs(yawFromAngle(8))).toBeLessThan(0.006); // 8° daneben: unter 0,4°
+    expect(yawFromAngle(60)).toBeCloseTo(0.3, 5);
+    expect(angleForYaw(yawFromAngle(-25))).toBeCloseTo(-25, 5);
   });
 });

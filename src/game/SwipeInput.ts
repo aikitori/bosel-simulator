@@ -18,8 +18,9 @@ const RECENT_MS = 300;
 /** Bildschirmhöhen pro Sekunde für volle Kraft. */
 const FULL_SPEED = 2.8;
 const MIN_SPEED = 0.35;
-const YAW_FACTOR = 0.45;
-const MAX_YAW = 0.6;
+/** Seitenwinkel bei MAX_DEG Wischwinkel; dazwischen quadratisch (siehe yawFromAngle). */
+const MAX_YAW = 0.3;
+const MAX_DEG = 60;
 /** Krümmung der Geste (Bogenmaß) für vollen Drall; kleinere Krümmungen sind Zittern. */
 const FULL_BEND = 0.6;
 const MIN_BEND = 0.08;
@@ -36,6 +37,20 @@ function speedAt(samples: Sample[], j: number, screenHeight: number): number {
   if (samples[j].t - samples[i].t > WINDOW_MS * 2) return 0;
   const dt = Math.max(1, samples[j].t - samples[i].t);
   return ((samples[i].y - samples[j].y) / dt) * (1000 / screenHeight);
+}
+
+/**
+ * Wischwinkel (Grad, positiv = nach links) → Seitenwinkel des Wurfs (rad). Quadratisch: kleine
+ * Ungenauigkeiten beim Geradeauswischen wirken kaum, große Winkel zielen trotzdem in Kurven.
+ * Linear (wie früher) landeten in der Simulation 98 % aller Würfe im Graben.
+ */
+export function yawFromAngle(deg: number): number {
+  return Math.sign(deg) * MAX_YAW * Math.min(1, Math.abs(deg) / MAX_DEG) ** 2;
+}
+
+/** Umkehrung von yawFromAngle (für Tests und Spielermodelle). */
+export function angleForYaw(yaw: number): number {
+  return Math.sign(yaw) * MAX_DEG * Math.sqrt(Math.min(1, Math.abs(yaw) / MAX_YAW));
 }
 
 /**
@@ -56,7 +71,7 @@ export function evaluate(samples: Sample[], screenHeight: number): ThrowInput | 
   const dx = last.x - samples[s].x;
   const dy = last.y - samples[s].y;
   const power = Math.min(1, (up - MIN_SPEED) / (FULL_SPEED - MIN_SPEED));
-  const yaw = dy < 0 ? Math.max(-MAX_YAW, Math.min(MAX_YAW, -Math.atan2(dx, -dy) * YAW_FACTOR)) : 0;
+  const yaw = dy < 0 ? yawFromAngle((-Math.atan2(dx, -dy) * 180) / Math.PI) : 0;
   return { yaw, power, spin: spinOf(samples.slice(s), screenHeight) };
 }
 
