@@ -23,6 +23,10 @@ const CAMBER = 0.012;
 /** Seitliche Beschleunigung durch vollen Drall (m/s²) und wie schnell er nachlässt (s). */
 const SPIN_ACCEL = 0.09;
 const SPIN_DECAY = 6;
+/** Höhe der Bordsteinkante; flacher fliegende oder rollende Kugeln prallen ab. */
+const CURB_HEIGHT = 0.12;
+/** Anteil der Quergeschwindigkeit, der beim Abprall am Bordstein erhalten bleibt. */
+const CURB_BOUNCE = 0.45;
 /** Zusätzliches Bremsen im Wasser einer Pfütze (Anteil von g). */
 const PUDDLE_DRAG = 1.1;
 /** Bankette fällt zum Graben hin ab. */
@@ -88,7 +92,7 @@ export interface ThrowResult {
   /** Erster Bodenkontakt (für Staub/Geräusch). */
   firstBounce: number;
   /** Getroffene Hindernisse in Reihenfolge, mit Bildnummer (für Spritzer und Anzeige). */
-  hits: { kind: ObstacleKind; frame: number }[];
+  hits: { kind: ObstacleKind | 'curb'; frame: number }[];
 }
 
 export function launchSpeed(power: number): number {
@@ -135,6 +139,7 @@ export function simulateThrow(
   const frames: Frame[] = [{ x, y, z }];
   const hits: ThrowResult['hits'] = [];
   const touched = new Set<Obstacle>();
+  let lastCurb = -100;
   const hit = (o: Obstacle) => {
     if (touched.has(o)) return false;
     touched.add(o);
@@ -196,6 +201,29 @@ export function simulateThrow(
             vz = 0.8 + rand() * 0.6;
             rolling = false;
           }
+        }
+      }
+    }
+
+    // Bordstein: im Ort prallt eine flache Kugel von der Kante ab, statt auf den Gehweg zu rollen
+    if (course.roadside[pos.idx] === 'town' && ad > hw && ad < hw + 0.3 && z < CURB_HEIGHT) {
+      const seg = course.points[Math.min(pos.idx + 1, course.points.length - 1)];
+      const a0 = course.points[pos.idx];
+      const sl = Math.hypot(seg.x - a0.x, seg.y - a0.y) || 1;
+      const side = Math.sign(pos.d);
+      // Normale nach außen (links = positiv)
+      const nx = (-(seg.y - a0.y) / sl) * side;
+      const ny = ((seg.x - a0.x) / sl) * side;
+      const vn = vx * nx + vy * ny;
+      if (vn > 0) {
+        vx -= (1 + CURB_BOUNCE) * vn * nx;
+        vy -= (1 + CURB_BOUNCE) * vn * ny;
+        // zurück an die Kante setzen
+        x = pos.foot.x + nx * (hw - 0.02);
+        y = pos.foot.y + ny * (hw - 0.02);
+        if (vn > 0.3 && frames.length - lastCurb > 8) {
+          hits.push({ kind: 'curb', frame: frames.length });
+          lastCurb = frames.length;
         }
       }
     }

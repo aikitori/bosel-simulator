@@ -107,3 +107,20 @@ describe('Drall', () => {
     expect(curl.rest.d - plain.rest.d).toBeGreaterThan(2);
   });
 });
+
+describe('Bordstein', () => {
+  const town = () =>
+    buildCourse('ort', { lat: 53, lon: 7 }, { points: [{ x: 0, y: 0 }, { x: 0, y: 2000 }], halfWidth: [2.5], surface: ['asphalt'], roadside: ['town'] });
+
+  it('eine schräg rollende Kugel prallt ab und bleibt auf der Fahrbahn', () => {
+    const r = simulateThrow(town(), { s: 0, d: 0 }, { yaw: 0.12, power: 0.6 }, 3);
+    expect(r.hits.some((h) => h.kind === 'curb')).toBe(true);
+    expect(r.outcome).toBe('road');
+    expect(r.gained).toBeGreaterThan(60);
+  });
+
+  it('auf dem Land ohne Bordstein landet dieselbe Kugel im Graben', () => {
+    const land = buildCourse('land', { lat: 53, lon: 7 }, { points: [{ x: 0, y: 0 }, { x: 0, y: 2000 }], halfWidth: [2.5], surface: ['asphalt'], roadside: ['ditch'] });
+    expect(simulateThrow(land, { s: 0, d: 0 }, { yaw: 0.12, power: 0.6 }, 3).outcome).toBe('ditch');
+  });
+});

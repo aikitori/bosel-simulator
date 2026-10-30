@@ -133,7 +133,11 @@ function soundEvents(r: ThrowResult): { frame: number; play: () => void }[] {
   }
   for (const h of r.hits) {
     const play =
-      h.kind === 'puddle' ? () => (sound.splash(), buzz(30)) : h.kind === 'stone' ? () => (sound.clack(), buzz(40)) : () => (sound.bounce(1), buzz(50));
+      h.kind === 'puddle'
+        ? () => (sound.splash(), buzz(30))
+        : h.kind === 'stone' || h.kind === 'curb'
+          ? () => (sound.clack(), buzz(40))
+          : () => (sound.bounce(1), buzz(50));
     out.push({ frame: h.frame, play });
   }
   if (r.outcome === 'ditch') out.push({ frame: f.length - 12, play: () => (sound.splash(), buzz(120)) });
@@ -315,7 +319,7 @@ export class Scene3D {
   }
 
   /** Spritzer (Pfütze) oder Splitt (Stein, Schlagloch) an der Kugel. */
-  private burst(at: THREE.Vector3, kind: ObstacleKind): void {
+  private burst(at: THREE.Vector3, kind: ObstacleKind | 'curb'): void {
     const color = kind === 'puddle' ? 0xcfe4f2 : 0x7a746c;
     const n = kind === 'puddle' ? 22 : 10;
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 });

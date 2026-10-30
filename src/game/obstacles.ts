@@ -21,7 +21,8 @@ export interface Obstacle {
   angle: number;
 }
 
-export const OBSTACLE_NAME: Record<ObstacleKind, string> = {
+export const OBSTACLE_NAME: Record<ObstacleKind | 'curb', string> = {
+  curb: 'Bordstein',
   pothole: 'Schlagloch',
   puddle: 'Pfütze',
   stone: 'Stein',
