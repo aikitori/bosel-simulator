@@ -16,7 +16,7 @@ const ROLL: Record<Surface | 'verge', number> = {
   paved: 0.1,
   gravel: 0.16,
   dirt: 0.22,
-  verge: 0.9,
+  verge: 0.32,
 };
 /** Dachprofil der Fahrbahn: die Kugel driftet zu den Rändern. */
 const CAMBER = 0.012;
@@ -214,7 +214,7 @@ export function simulateThrow(
         }
         const soft = !onRoad || inPuddle; // Gras und Wasser schlucken den Aufprall
         vz = -vz * (soft ? 0.12 : 0.38);
-        const keep = inPuddle ? 0.5 : soft ? 0.6 : 0.94;
+        const keep = inPuddle ? 0.5 : soft ? 0.8 : 0.94;
         vx *= keep;
         vy *= keep;
         if (vz < 0.9) {
