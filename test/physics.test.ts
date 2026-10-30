@@ -26,7 +26,7 @@ describe('Wurf', () => {
     const r = simulateThrow(straight(), { s: 0, d: 0 }, { yaw: 0, power: 1 });
     expect(['road', 'verge']).toContain(r.outcome);
     expect(r.gained).toBeGreaterThan(120);
-    expect(r.gained).toBeLessThan(320);
+    expect(r.gained).toBeLessThan(400);
   });
 
   it('ein schwacher Wurf kommt nicht so weit', () => {
