@@ -30,6 +30,37 @@ export interface ThrowInput {
   yaw: number;
   /** Wurfkraft 0…1. */
   power: number;
+  /**
+   * Zeitpunkt des Loslassens relativ zum idealen Moment (Sekunden, negativ = zu früh).
+   * Ohne Angabe: idealer Abwurf.
+   */
+  release?: number;
+}
+
+/** Flacher Abwurf, bei dem die Kugel am weitesten rollt. */
+export function idealPitch(power: number): number {
+  return 0.06 + 0.05 * power;
+}
+
+/**
+ * Abwurfwinkel aus dem Zeitpunkt des Loslassens (Sekunden relativ zum idealen Moment):
+ * zu früh → Kugel wird in den Boden geschlagen, zu spät → hoher Bogen, der kaum rollt.
+ */
+export function pitchFromTiming(timing: number, power: number): number {
+  return idealPitch(power) + Math.max(-0.3, Math.min(0.9, timing * 1.8));
+}
+
+/** Zu früh hat der Arm noch nicht durchgezogen, zu spät bremst er schon: weniger Tempo. */
+export function speedFromTiming(timing: number): number {
+  return timing < 0 ? Math.max(0.5, 1 - 2.2 * -timing) : Math.max(0.65, 1 - 0.7 * timing);
+}
+
+export type TimingGrade = 'perfect' | 'good' | 'early' | 'late';
+
+export function gradeTiming(timing: number): TimingGrade {
+  if (Math.abs(timing) < 0.04) return 'perfect';
+  if (Math.abs(timing) < 0.1) return 'good';
+  return timing < 0 ? 'early' : 'late';
 }
 
 export interface Frame {
@@ -77,8 +108,9 @@ export function simulateThrow(
   const left = { x: -heading.y, y: heading.x };
   const origin = { x: base.p.x + left.x * start.d, y: base.p.y + left.y * start.d };
 
-  const speed = launchSpeed(input.power);
-  const pitch = 0.06 + 0.05 * input.power;
+  const timing = input.release ?? 0;
+  const speed = launchSpeed(input.power) * speedFromTiming(timing);
+  const pitch = pitchFromTiming(timing, input.power);
   const cos = Math.cos(input.yaw);
   const sin = Math.sin(input.yaw);
   const dir = { x: heading.x * cos + left.x * sin, y: heading.y * cos + left.y * sin };

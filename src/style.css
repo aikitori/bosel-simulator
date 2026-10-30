@@ -471,3 +471,42 @@ footer {
 .kescher.lost .kescher-head {
   color: #ffb3a8;
 }
+
+/* Timing-Balken beim Anlauf */
+.timing {
+  position: absolute;
+  left: 50%;
+  bottom: max(150px, calc(env(safe-area-inset-bottom) + 150px));
+  width: min(320px, 70vw);
+  height: 14px;
+  transform: translateX(-50%);
+  border-radius: 7px;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.35), rgb(255 255 255 / 0.55));
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.timing.show {
+  opacity: 1;
+}
+.timing-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* grüner Bereich um den idealen Moment, gesetzt per --ideal */
+  left: calc(var(--ideal, 0.78) * 100% - 6%);
+  width: 12%;
+  border-radius: 7px;
+  background: linear-gradient(90deg, #f2c94c, #3fbf5a 30%, #3fbf5a 70%, #f2c94c);
+}
+.timing-marker {
+  position: absolute;
+  top: -5px;
+  width: 4px;
+  height: 24px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 4px rgb(0 0 0 / 0.6);
+}

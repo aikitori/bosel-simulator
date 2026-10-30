@@ -1,9 +1,9 @@
 import type { ThrowInput } from './physics';
 
 /**
- * Wurf per Wischgeste: Finger aufsetzen und nach oben schnippen. Tempo der Geste = Kraft,
- * seitliche Abweichung = Richtung. Ausgewertet werden nur die letzten Millisekunden vor dem
- * Loslassen, damit ein langsames Zurückziehen als Ausholen zählt.
+ * Wurf per Touch: Finger aufsetzen startet den Anlauf, im richtigen Moment nach oben schnippen
+ * und loslassen. Tempo der Geste = Kraft, seitliche Abweichung = Richtung, Zeitpunkt des
+ * Loslassens = Abwurfwinkel. Ausgewertet werden nur die letzten Millisekunden vor dem Loslassen.
  */
 
 interface Sample {
@@ -45,7 +45,10 @@ export class SwipeInput {
   constructor(
     private readonly el: HTMLElement,
     private readonly onPreview: (aim: ThrowInput | null) => void,
-    private readonly onThrow: (input: ThrowInput) => void,
+    /** Finger aufgesetzt: Anlauf beginnt. */
+    private readonly onStart: () => void,
+    /** Finger losgelassen = Abwurf; `null`, wenn nicht nach oben gewischt wurde. */
+    private readonly onRelease: (input: ThrowInput | null) => void,
     private readonly onTap: () => void,
   ) {
     el.addEventListener('pointerdown', this.down);
@@ -69,6 +72,7 @@ export class SwipeInput {
     this.active = e.pointerId;
     this.samples = [{ x: e.clientX, y: e.clientY, t: e.timeStamp }];
     this.el.setPointerCapture(e.pointerId);
+    this.onStart();
   };
 
   private move = (e: PointerEvent) => {
@@ -84,11 +88,13 @@ export class SwipeInput {
     this.samples.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
     const input = evaluate(this.samples, this.el.clientHeight);
     this.onPreview(null);
-    if (input && this.enabled) this.onThrow(input);
+    if (this.enabled) this.onRelease(input);
   };
 
   private cancel = () => {
+    if (this.active === -1) return;
     this.active = -1;
     this.onPreview(null);
+    if (this.enabled) this.onRelease(null);
   };
 }

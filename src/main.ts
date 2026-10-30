@@ -153,7 +153,7 @@ function home(): void {
   how.append(el('h2', '', 'So geht’s'));
   const ul = el('ul');
   for (const t of [
-    'Finger aufs Bild und zügig nach oben wischen: je schneller, desto weiter.',
+    'Finger aufs Bild: Anlauf. Im grünen Bereich zügig nach oben wischen und loslassen – der Moment bestimmt den Abwurfwinkel, das Tempo die Weite.',
     'Schräg wischen lenkt die Kugel. In Kurven rollt sie geradeaus weiter – Vorsicht, Graben!',
     'Landet die Kugel im Graben, geht es dort weiter, wo sie die Straße verlassen hat.',
     'Wer mit weniger Würfen ins Ziel kommt, gewinnt. Antippen spult den Wurf vor.',

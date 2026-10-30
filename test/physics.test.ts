@@ -87,3 +87,14 @@ describe('Hindernisse', () => {
     expect(r.gained).toBeLessThan(free.gained);
   });
 });
+
+describe('Abwurfzeitpunkt', () => {
+  const throwAt = (timing: number) =>
+    simulateThrow(straight(), { s: 0, d: 0 }, { yaw: 0, power: 0.7, release: timing }, 3).gained;
+
+  it('im idealen Moment rollt die Kugel am weitesten', () => {
+    const ideal = throwAt(0);
+    expect(throwAt(-0.15)).toBeLessThan(ideal - 10);
+    expect(throwAt(0.25)).toBeLessThan(ideal - 10);
+  });
+});

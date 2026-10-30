@@ -1,12 +1,12 @@
 import type { Course } from '../osm/course';
 import { pointAt } from '../osm/course';
 import { OBSTACLE_NAME, placeObstacles, type Obstacle } from './obstacles';
-import { simulateThrow, type Outcome, type ThrowInput } from './physics';
+import { gradeTiming, simulateThrow, type Outcome, type ThrowInput, type TimingGrade } from './physics';
 import { addPenalty, currentPlayer, isOver, newMatch, recordThrow, winner, type Match, type Order, type TeamSetup } from './rules';
 import type { Assets } from './assets';
 import { sound } from './audio';
 import { kescher } from './Kescher';
-import { Scene3D } from './Scene3D';
+import { IDEAL_RELEASE, Scene3D } from './Scene3D';
 import { SwipeInput } from './SwipeInput';
 
 export interface GameEnd {
@@ -21,6 +21,15 @@ const OUTCOME_TEXT: Record<Outcome, string> = {
   out: 'Im Aus! Weiter, wo sie die Straße verlassen hat.',
   finish: 'Im Ziel!',
 };
+
+const TIMING_TEXT: Record<TimingGrade, string> = {
+  perfect: 'perfekt abgeworfen',
+  good: '',
+  early: 'zu früh – Aufsetzer',
+  late: 'zu spät – Bogenlampe',
+};
+/** So weit läuft der Timing-Balken über den idealen Moment hinaus (Sekunden). */
+const TIMING_AFTER = 0.45;
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
   const e = document.createElement(tag);
@@ -41,6 +50,8 @@ export class Game {
   private readonly toast: HTMLElement;
   private readonly minimap: HTMLCanvasElement;
   private readonly obstacles: Obstacle[];
+  private readonly timingBar: HTMLElement;
+  private lastAim: ThrowInput | null = null;
   private readonly onResize = () => {
     this.scene.resize();
     this.drawMinimap();
@@ -76,10 +87,14 @@ export class Game {
     this.root.append(top);
 
     this.turnLabel = el('div', 'turn-label');
-    this.hint = el('div', 'hint', 'Nach oben wischen zum Werfen');
+    this.hint = el('div', 'hint', 'Halten = Anlauf · im Grünen hochwischen');
     this.toast = el('div', 'toast');
     this.minimap = el('canvas', 'minimap');
-    this.root.append(this.turnLabel, this.hint, this.toast, this.minimap);
+    // Timing-Balken: Marker läuft beim Anlauf durch, grün = idealer Abwurfmoment
+    this.timingBar = el('div', 'timing');
+    this.timingBar.append(el('div', 'timing-zone'), el('div', 'timing-marker'));
+    this.timingBar.style.setProperty('--ideal', String(IDEAL_RELEASE / (IDEAL_RELEASE + TIMING_AFTER)));
+    this.root.append(this.turnLabel, this.hint, this.toast, this.minimap, this.timingBar);
     host.append(this.root);
 
     this.scene = new Scene3D(canvas, course, assets, [teams[0].color, teams[1].color]);
@@ -88,8 +103,12 @@ export class Game {
     this.scene.hideBall(1, true);
     this.input = new SwipeInput(
       canvas,
-      (aim) => this.scene.preview(aim),
-      (input) => this.throwBall(input),
+      (aim) => {
+        this.scene.preview(aim);
+        if (aim) this.lastAim = aim;
+      },
+      () => this.startRunup(),
+      (input) => this.onRelease(input),
       () => this.scene.fastForward(),
     );
     window.addEventListener('resize', this.onResize);
@@ -130,21 +149,54 @@ export class Game {
     this.drawMinimap();
   }
 
-  private throwBall(input: ThrowInput): void {
+  private startRunup(): void {
+    this.lastAim = null;
+    this.turnLabel.classList.remove('show');
+    this.hint.classList.remove('show');
+    this.scene.startRunup(() => this.onRelease(this.lastAim ?? { yaw: 0, power: 0.15 }));
+    this.timingBar.classList.add('show');
+    const tick = () => {
+      const t = this.scene.releaseTiming();
+      if (t === null || !this.timingBar.classList.contains('show')) return;
+      // Anzeige von Anlaufbeginn bis kurz nach dem Schwung
+      const k = Math.max(0, Math.min(1, (t + IDEAL_RELEASE) / (IDEAL_RELEASE + TIMING_AFTER)));
+      (this.timingBar.lastElementChild as HTMLElement).style.left = `${k * 100}%`;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  /** Finger los (oder zu lange gehalten): jetzt wird geworfen – oder abgebrochen. */
+  private onRelease(input: ThrowInput | null): void {
+    const timing = this.scene.releaseTiming();
+    this.timingBar.classList.remove('show');
+    if (timing === null) return;
+    // Losgelassen, bevor überhaupt ausgeholt wurde und ohne Wischen: zurück an den Start
+    if (!input && timing < -0.35) {
+      this.scene.cancelRunup();
+      this.turnLabel.classList.add('show');
+      this.hint.classList.add('show');
+      return;
+    }
+    this.throwBall(input ?? { yaw: 0, power: 0.15 }, timing);
+  }
+
+  private throwBall(input: ThrowInput, timing = 0): void {
     const m = this.match;
     const team = m.current;
     const t = m.teams[team];
     this.input.enabled = false;
     this.turnLabel.classList.remove('show');
     this.hint.classList.remove('show');
-    const result = simulateThrow(this.course, t, input, (Math.random() * 2 ** 31) | 0, this.obstacles);
-    this.scene.playThrow(result, input.power, () => {
+    const grade = gradeTiming(timing);
+    const result = simulateThrow(this.course, t, { ...input, release: timing }, (Math.random() * 2 ** 31) | 0, this.obstacles);
+    const done = () => {
       recordThrow(m, result.rest, result.gained, result.outcome);
       this.scene.setBall(team, result.rest);
       this.scene.hideBall(team, false);
       const meters = `${Math.round(result.gained)} m`;
       const kinds = [...new Set(result.hits.map((h) => OBSTACLE_NAME[h.kind]))];
-      const extra = [kinds.join(', '), OUTCOME_TEXT[result.outcome]].filter(Boolean).join(' · ');
+      const extra = [TIMING_TEXT[grade], kinds.join(', '), OUTCOME_TEXT[result.outcome]].filter(Boolean).join(' · ');
       this.showToast(result.outcome === 'finish' ? `Im Ziel nach ${t.throws} Würfen!` : extra ? `${meters} · ${extra}` : meters, result.outcome);
       this.updateHud();
       const next = () => {
@@ -163,7 +215,10 @@ export class Game {
         }
         next();
       }, 1400);
-    });
+    };
+    // Dev-Hook: ohne Finger läuft der Anlauf von selbst bis zum idealen Moment
+    if (this.scene.releaseTiming() === null) this.scene.playThrow(result, input.power, done);
+    else this.scene.release(result, input.power, done);
   }
 
   private showToast(text: string, outcome: Outcome): void {

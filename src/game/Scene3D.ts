@@ -16,9 +16,13 @@ const SKY = 0xb4d3ec;
 
 type Mode = 'idle' | 'intro' | 'aim' | 'runup' | 'flight' | 'settle';
 
-const RUN = 0.95;
-const TRAIL = 50;
+const RUN = 0.85;
 const SWING = 0.34;
+const TRAIL = 50;
+/** Idealer Abwurf: Arm knapp hinter dem tiefsten Punkt (Sekunden ab Anlaufbeginn). */
+export const IDEAL_RELEASE = RUN + 0.78 * SWING;
+/** So lange darf man nach dem Schwung noch festhalten, dann fliegt die Kugel von selbst. */
+const LATE_LIMIT = RUN + SWING + 0.3;
 
 export class Thrower {
   readonly root = new THREE.Group();
@@ -166,7 +170,12 @@ export class Scene3D {
   private readonly particleGeo = new THREE.SphereGeometry(0.03, 5, 4);
   private nextHit = 0;
   private nextSound = 0;
-  private throwPower = 0;
+  private figureBack = -4;
+  private figureCrouch = 0;
+  private figureLean = 0;
+  private armAngle = 0;
+  private onLate: (() => void) | null = null;
+  private pending: { result: ThrowResult; power: number; onDone: () => void } | null = null;
   private sounds: { frame: number; play: () => void }[] = [];
   private readonly trail: THREE.Line;
   private readonly trailPoints: THREE.Vector3[] = [];
@@ -342,19 +351,49 @@ export class Scene3D {
 
   /** Anlauf, Wurf und Kugelflug abspielen. */
   playThrow(result: ThrowResult, power: number, onDone: () => void): void {
-    this.result = result;
-    this.throwPower = power;
-    this.onThrowDone = onDone;
+    this.startRunup(() => undefined);
+    this.pending = { result, power, onDone };
+  }
+
+  /** Finger aufgesetzt: Anlauf und Ausholen beginnen. `onLate` meldet zu langes Festhalten. */
+  startRunup(onLate: () => void): void {
     this.mode = 'runup';
     this.time = 0;
+    this.onLate = onLate;
+    this.pending = null;
+    this.thrower.play('run', 0.12);
+  }
+
+  /** Zeit relativ zum idealen Abwurfmoment (negativ = zu früh); `null` außerhalb des Anlaufs. */
+  releaseTiming(): number | null {
+    return this.mode === 'runup' ? this.time - IDEAL_RELEASE : null;
+  }
+
+  /** Finger ohne Wurf losgelassen: zurück an den Start. */
+  cancelRunup(): void {
+    if (this.mode !== 'runup') return;
+    this.mode = 'aim';
+    this.onLate = null;
+    this.thrower.play('idle', 0.3);
+  }
+
+  /** Abwurf im aktuellen Moment: Kugel verlässt die Hand, Flug beginnt. */
+  release(result: ThrowResult, power: number, onDone: () => void): void {
+    this.result = result;
+    this.onThrowDone = onDone;
+    this.onLate = null;
+    this.mode = 'flight';
     this.flightTime = 0;
     this.settleTime = 0;
     this.nextHit = 0;
+    this.speed = 1;
     this.aimArrow.visible = false;
-    this.thrower.play('run', 0.12);
+    this.ballInHand = false;
+    this.chaseDir.copy(this.throwDir);
     this.trailPoints.length = 0;
     this.sounds = soundEvents(result);
     this.nextSound = 0;
+    sound.whoosh(power);
   }
 
   /** Streckenflug zum Start: von oben die ganze Strecke entlang, Antippen überspringt. */
@@ -421,23 +460,26 @@ export class Scene3D {
       const tt = this.time;
       if (tt < RUN) {
         const k = tt / RUN;
-        this.placeFigure(-4 + 3.7 * k * (2 - k), 0, 0);
+        this.setPose(-4 + 3.7 * k * (2 - k), 0, 0, k > 0.45 ? 2.2 * ((k - 0.45) / 0.55) : null);
         t.update(dt);
         // im Laufen weit nach hinten ausholen
-        if (k > 0.45) t.swingArm(2.2 * ((k - 0.45) / 0.55));
+        if (this.armAngle !== 0) t.swingArm(this.armAngle);
       } else {
+        // Schwung nach vorn; nach dem Schwung bleibt der Arm oben, bis losgelassen wird
         const k = Math.min(1, (tt - RUN) / SWING);
         if (k < 0.1) t.play('stand', 0.1);
-        this.placeFigure(-0.3 + 0.3 * k, 0.4 * Math.sin(Math.min(1, k * 1.3) * Math.PI * 0.5), -0.3 * k);
+        this.setPose(-0.3 + 0.3 * k, 0.4 * Math.sin(Math.min(1, k * 1.3) * Math.PI * 0.5), -0.3 * k, 2.2 - 3.0 * k);
         t.update(dt);
-        t.swingArm(2.2 - 3.0 * k);
-        if (k >= 1) {
-          this.mode = 'flight';
-          this.flightTime = 0;
-          this.ballInHand = false;
-          this.chaseDir.copy(this.throwDir);
-          sound.whoosh(this.throwPower);
-        }
+        t.swingArm(this.armAngle);
+      }
+      if (this.pending && tt >= IDEAL_RELEASE) {
+        const p = this.pending;
+        this.pending = null;
+        this.release(p.result, p.power, p.onDone);
+      } else if (tt > LATE_LIMIT && this.onLate) {
+        const late = this.onLate;
+        this.onLate = null;
+        late();
       }
       this.overShoulder();
     } else if (this.mode === 'flight' || this.mode === 'settle') {
@@ -467,12 +509,13 @@ export class Scene3D {
       this.updateTrail(ball.position);
       const vel = new THREE.Vector3(b.x - a.x, 0, -(b.y - a.y));
       if (vel.lengthSq() > 1e-6) this.chaseDir.lerp(vel.normalize(), 1 - Math.exp(-dt * 4)).normalize();
-      // Figur bleibt kurz in der Abwurfhaltung, dann steht sie auf
+      // Figur schwingt aus der Abwurfhaltung nach und richtet sich auf
       const after = this.flightTime / this.speed;
+      const f = Math.min(1, after / 0.6);
       if (after > 0.6) t.play('idle', 0.5);
-      this.placeFigure(0, after < 0.6 ? 0.4 * (1 - after / 0.6) : 0, after < 0.6 ? -0.3 * (1 - after / 0.6) : 0);
+      this.placeFigure(this.figureBack * (1 - f), this.figureCrouch * (1 - f), this.figureLean * (1 - f));
       t.update(dt);
-      if (after < 0.6) t.swingArm(-0.8 - 0.4 * (after / 0.6));
+      if (after < 0.6) t.swingArm(this.armAngle + (-1.2 - this.armAngle) * f);
       this.chase(ball.position, dt);
       if (fi >= r.frames.length - 1) {
         if (this.mode === 'flight') {
@@ -507,6 +550,14 @@ export class Scene3D {
     this.sun.position.copy(this.camLook).add(new THREE.Vector3(50, 90, 35));
     this.camera.lookAt(this.camLook);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private setPose(back: number, crouch: number, lean: number, arm: number | null): void {
+    this.figureBack = back;
+    this.figureCrouch = crouch;
+    this.figureLean = lean;
+    this.armAngle = arm ?? 0;
+    this.placeFigure(back, crouch, lean);
   }
 
   private updateTrail(at: THREE.Vector3): void {
