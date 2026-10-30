@@ -195,11 +195,11 @@ export async function fetchRoads(bbox: BBox, signal?: AbortSignal, onProgress?: 
  * Streifen, für Belag und Breite) und alles, was daneben steht – Häuser, Bäume, Hecken, Wald,
  * Weiden, Äcker, Gewässer – im Umkreis `radius`.
  */
-export function fetchScenery(line: LatLon[], radius: number, signal?: AbortSignal, onProgress?: OnProgress): Promise<OsmElement[]> {
-  const coords = line.map((p) => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`).join(',');
-  const a = `(around:${radius},${coords})`;
-  return query(
-    `[out:json][timeout:40];(` +
+export function fetchScenery(lines: LatLon[][], radius: number, signal?: AbortSignal, onProgress?: OnProgress): Promise<OsmElement[]> {
+  const parts = lines.map((line) => {
+    const coords = line.map((p) => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`).join(',');
+    const a = `(around:${radius},${coords})`;
+    return (
       `way["highway"](around:12,${coords});` +
       `way["building"]${a};` +
       `node["natural"="tree"]${a};` +
@@ -208,9 +208,8 @@ export function fetchScenery(line: LatLon[], radius: number, signal?: AbortSigna
       `way["landuse"~"^(forest|farmland|meadow|grass|residential|farmyard|orchard|village_green|basin|reservoir)$"]${a};` +
       `relation["landuse"~"^(forest|farmland|meadow|residential)$"]${a};` +
       `way["barrier"="hedge"]${a};` +
-      `way["waterway"~"^(ditch|drain|stream|canal|river)$"]${a};` +
-      `);out geom qt;`,
-    signal,
-    onProgress,
-  );
+      `way["waterway"~"^(ditch|drain|stream|canal|river)$"]${a};`
+    );
+  });
+  return query(`[out:json][timeout:40];(${parts.join('')});out geom qt;`, signal, onProgress);
 }

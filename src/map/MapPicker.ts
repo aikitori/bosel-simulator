@@ -3,9 +3,10 @@ import 'leaflet/dist/leaflet.css';
 import type { LatLon } from '../geo';
 import type { Course } from '../osm/course';
 import { bboxAround, fetchRoads, fetchScenery, type BBox, type LoadState } from '../osm/overpass';
+import { cachedScenery } from '../osm/cache';
 import { routeOsrm } from '../osm/osrm';
 import { buildGraph, courseFromRoute, route, type RoadGraph, type RoutedLine } from '../osm/routing';
-import { haversine, Projection, simplify } from '../geo';
+import { haversine } from '../geo';
 
 /**
  * Strecke auf der OSM-Karte wählen: Start und Ziel antippen (weitere Punkte = Umweg über
@@ -246,18 +247,25 @@ export class MapPicker {
     const r = this.routed;
     if (!r) return;
     this.playBtn.disabled = true;
-    const onProgress = this.progress('Lade Straßenbelag, Häuser und Bäume entlang der Route …');
-    // Linie für die Umkreissuche vereinfachen – genau genug für einen 12-m-Streifen
-    const proj = new Projection(r.line[0]);
-    let line = simplify(r.line, (p) => proj.toLocal(p), 3);
-    for (let tol = 6; line.length > 300; tol *= 2) line = simplify(r.line, (p) => proj.toLocal(p), tol);
+    let onProgress: ((s: LoadState) => void) | undefined;
     let sceneryFailed = false;
-    const [scenery, place] = await Promise.all([
-      fetchScenery(line, 120, AbortSignal.timeout(30000), onProgress).catch(() => {
+    const loadScenery = async () => {
+      try {
+        // Schon geladene Abschnitte kommen aus dem Speicher, nur Lücken gehen an Overpass
+        const res = await cachedScenery(r.line, 120, (gaps) => {
+          onProgress = this.progress('Lade Straßenbelag, Häuser und Bäume …');
+          return fetchScenery(gaps, 120, AbortSignal.timeout(30000), onProgress);
+        });
+        return res.elements;
+      } catch {
         // ohne Kulisse spielbar, nur kahler
         sceneryFailed = true;
         return [];
-      }),
+      }
+    };
+    this.setStatus('Prüfe gespeicherte Umgebung …', false, true);
+    const [scenery, place] = await Promise.all([
+      loadScenery(),
       this.placeName ? Promise.resolve(this.placeName) : reverseName(r.line[0]),
     ]);
     this.setStatus('Baue die Landschaft …', false, true);
