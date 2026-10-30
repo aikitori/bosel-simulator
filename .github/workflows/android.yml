@@ -1,0 +1,145 @@
+# APK und Web-Vorschau automatisch bauen.
+# - Push auf main / manuell: signiertes APK als GitHub-Release (v0.<Laufnummer>), dazu die Web-Vorschau.
+# - Pull Request: nur Prüfbau (Debug-APK als Artefakt), damit Fehler vor dem Merge auffallen.
+name: APK und Web-Vorschau
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # Release anlegen
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Android-APK
+    runs-on: ubuntu-latest
+    env:
+      RELEASE: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Spiel bauen
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signaturschlüssel aus den Secrets holen
+        if: env.RELEASE == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=""
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Signaturschlüssel fehlt::Diese Repo-Secrets fehlen:$missing. Ohne festen Schlüssel ließe sich das neue APK nicht über das alte installieren, und gespeicherte Strecken wären weg. Einmalig einrichten: README, Abschnitt 'Signaturschlüssel einrichten' (scripts/keystore-einrichten.sh)."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Signiertes APK bauen
+        if: env.RELEASE == 'true'
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease --no-daemon -PversionCode=${{ github.run_number }} -PversionName=0.${{ github.run_number }}
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/bosel-simulator.apk"
+          # Sicherstellen, dass es wirklich mit dem festen Schlüssel signiert ist
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs "$GITHUB_WORKSPACE/bosel-simulator.apk"
+
+      - name: Als Release veröffentlichen
+        if: env.RELEASE == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.${{ github.run_number }}
+          name: Boßel-Simulator v0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: bosel-simulator.apk
+          body: |
+            Automatisch gebaut aus ${{ github.sha }}.
+            Aufs Handy: https://github.com/${{ github.repository }}/releases/latest/download/bosel-simulator.apk
+
+      - name: Prüfbau (Pull Request, ohne Signatur)
+        if: env.RELEASE != 'true'
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon -PversionCode=${{ github.run_number }}
+
+      - name: Prüfbau hochladen
+        if: env.RELEASE != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bosel-simulator-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+  pages:
+    name: Web-Vorschau
+    # Bei einem privaten Repo geht Pages nur mit bestimmten GitHub-Tarifen: dann überspringen.
+    if: github.event_name != 'pull_request' && !github.event.repository.private
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Spiel bauen
+        run: |
+          npm ci
+          npm run build
+
+      - name: Pages vorbereiten
+        id: pages
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+
+      - name: Hinweis, falls Pages nicht eingeschaltet ist
+        if: steps.pages.outcome != 'success'
+        run: echo "::notice title=Web-Vorschau übersprungen::GitHub Pages ist für dieses Repo nicht eingeschaltet. Einmalig unter Settings → Pages → Source 'GitHub Actions' wählen (README, Abschnitt 'Web-Vorschau')."
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outcome == 'success'
+        with:
+          path: dist
+
+      - name: Veröffentlichen
+        id: deploy
+        if: steps.pages.outcome == 'success'
+        uses: actions/deploy-pages@v4

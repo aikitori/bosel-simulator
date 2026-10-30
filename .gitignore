@@ -1,0 +1,4 @@
+node_modules
+dist
+*.jks
+.DS_Store

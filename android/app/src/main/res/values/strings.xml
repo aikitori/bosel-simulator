@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Boßel-Simulator</string>
+    <string name="title_activity_main">Boßel-Simulator</string>
+    <string name="package_name">de.aikitori.boselsimulator</string>
+    <string name="custom_url_scheme">de.aikitori.boselsimulator</string>
+</resources>
