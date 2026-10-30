@@ -6,10 +6,11 @@
 
 [![Build](https://github.com/aikitori/bosel-simulator/actions/workflows/android.yml/badge.svg)](https://github.com/aikitori/bosel-simulator/actions/workflows/android.yml)
 [![Latest release](https://img.shields.io/github/v/release/aikitori/bosel-simulator)](https://github.com/aikitori/bosel-simulator/releases/latest)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 [**Download APK**](https://github.com/aikitori/bosel-simulator/releases/latest/download/bosel-simulator.apk) · [**Play in the browser**](https://aikitori.github.io/bosel-simulator/)
 
-<img src="docs/screenshot-aim.png" width="260" alt="Aiming"> <img src="docs/screenshot-throw.png" width="260" alt="Throwing">
+<img src="docs/screenshot-map.png" width="160" alt="Pick a route on the map"> <img src="docs/screenshot-flyover.png" width="160" alt="Fly-over of the course"> <img src="docs/screenshot-runup.png" width="160" alt="Run-up with timing bar"> <img src="docs/screenshot-throw.png" width="160" alt="Ball rolling with trail"> <img src="docs/screenshot-net.png" width="160" alt="Net mini-game">
 
 </div>
 
@@ -58,3 +59,7 @@ Every push to `main` builds a signed APK release and the web version (GitHub Pag
 
 Models by [Quaternius](https://quaternius.com), textures by [Poly Haven](https://polyhaven.com) – all CC0, see [CREDITS.md](CREDITS.md).
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE) or later. Third-party assets are CC0, map data is ODbL – see [CREDITS.md](CREDITS.md).

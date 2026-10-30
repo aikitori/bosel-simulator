@@ -329,7 +329,11 @@ footer {
   vertical-align: -0.05em;
 }
 .hint {
-  bottom: max(28px, env(safe-area-inset-bottom));
+  /* über Minikarte und Timing-Balken */
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 180px);
+  max-width: calc(100vw - 24px);
+  white-space: normal;
+  text-align: center;
   background: rgb(255 255 255 / 0.9);
   animation: nudge 1.6s ease-in-out infinite;
 }
