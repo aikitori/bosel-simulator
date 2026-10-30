@@ -1,7 +1,10 @@
 import type { Course } from '../osm/course';
 import { pointAt } from '../osm/course';
+import { OBSTACLE_NAME, placeObstacles, type Obstacle } from './obstacles';
 import { simulateThrow, type Outcome, type ThrowInput } from './physics';
-import { currentPlayer, isOver, newMatch, recordThrow, winner, type Match, type Order, type TeamSetup } from './rules';
+import { addPenalty, currentPlayer, isOver, newMatch, recordThrow, winner, type Match, type Order, type TeamSetup } from './rules';
+import type { Assets } from './assets';
+import { kescher } from './Kescher';
 import { Scene3D } from './Scene3D';
 import { SwipeInput } from './SwipeInput';
 
@@ -13,7 +16,7 @@ export interface GameEnd {
 const OUTCOME_TEXT: Record<Outcome, string> = {
   road: '',
   verge: 'auf der Bankette',
-  ditch: 'Im Graben! Weiter, wo sie die Straße verlassen hat.',
+  ditch: 'Kloot in de Sloot!',
   out: 'Im Aus! Weiter, wo sie die Straße verlassen hat.',
   finish: 'Im Ziel!',
 };
@@ -36,6 +39,7 @@ export class Game {
   private readonly hint: HTMLElement;
   private readonly toast: HTMLElement;
   private readonly minimap: HTMLCanvasElement;
+  private readonly obstacles: Obstacle[];
   private readonly onResize = () => {
     this.scene.resize();
     this.drawMinimap();
@@ -46,9 +50,13 @@ export class Game {
     private readonly course: Course,
     teams: [TeamSetup, TeamSetup],
     order: Order,
+    assets: Assets,
     private readonly end: GameEnd,
   ) {
     this.match = newMatch(teams, order);
+    // Im Dev-Modus lässt sich die Dichte per ?hindernisse=200 hochdrehen (zum Ansehen)
+    const density = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('hindernisse')) || undefined : undefined;
+    this.obstacles = placeObstacles(course, (Math.random() * 2 ** 31) | 0, density);
     this.root = el('div', 'game');
     const canvas = el('canvas', 'game-canvas');
     this.root.append(canvas);
@@ -73,7 +81,8 @@ export class Game {
     this.root.append(this.turnLabel, this.hint, this.toast, this.minimap);
     host.append(this.root);
 
-    this.scene = new Scene3D(canvas, course, [teams[0].color, teams[1].color]);
+    this.scene = new Scene3D(canvas, course, assets, [teams[0].color, teams[1].color]);
+    this.scene.setObstacles(this.obstacles);
     this.scene.hideBall(0, true);
     this.scene.hideBall(1, true);
     this.input = new SwipeInput(
@@ -84,7 +93,11 @@ export class Game {
     );
     window.addEventListener('resize', this.onResize);
     // Für automatische Tests: Wurf ohne Wischgeste auslösen
-    if (import.meta.env.DEV) (window as unknown as { boselThrow: (i: ThrowInput) => void }).boselThrow = (i) => this.input.enabled && this.throwBall(i);
+    if (import.meta.env.DEV) {
+      const w = window as unknown as { boselThrow: (i: ThrowInput) => void; boselKescher: () => Promise<boolean> };
+      w.boselThrow = (i) => this.input.enabled && this.throwBall(i);
+      w.boselKescher = () => kescher(this.root, teams[0].color);
+    }
     this.updateHud();
     this.nextTurn();
   }
@@ -118,17 +131,31 @@ export class Game {
     this.input.enabled = false;
     this.turnLabel.classList.remove('show');
     this.hint.classList.remove('show');
-    const result = simulateThrow(this.course, t, input, (Math.random() * 2 ** 31) | 0);
+    const result = simulateThrow(this.course, t, input, (Math.random() * 2 ** 31) | 0, this.obstacles);
     this.scene.playThrow(result, () => {
       recordThrow(m, result.rest, result.gained, result.outcome);
       this.scene.setBall(team, result.rest);
       this.scene.hideBall(team, false);
       const meters = `${Math.round(result.gained)} m`;
-      const extra = OUTCOME_TEXT[result.outcome];
+      const kinds = [...new Set(result.hits.map((h) => OBSTACLE_NAME[h.kind]))];
+      const extra = [kinds.join(', '), OUTCOME_TEXT[result.outcome]].filter(Boolean).join(' · ');
       this.showToast(result.outcome === 'finish' ? `Im Ziel nach ${t.throws} Würfen!` : extra ? `${meters} · ${extra}` : meters, result.outcome);
       this.updateHud();
-      if (isOver(m)) setTimeout(() => this.showResult(), 1800);
-      else setTimeout(() => this.nextTurn(), 1500);
+      const next = () => {
+        this.updateHud();
+        if (isOver(m)) setTimeout(() => this.showResult(), 1800);
+        else setTimeout(() => this.nextTurn(), 1500);
+      };
+      if (result.outcome !== 'ditch') return next();
+      // Kugel im Graben: rausfischen oder Strafwurf
+      setTimeout(async () => {
+        const caught = await kescher(this.root, t.setup.color);
+        if (!caught) {
+          addPenalty(m, team);
+          this.showToast(`Strafwurf für ${t.setup.name}`, 'ditch');
+        }
+        next();
+      }, 1400);
     });
   }
 
@@ -243,6 +270,7 @@ export class Game {
     row('Würfe', (i) => `${m.teams[i].throws}`);
     row('Weitester Wurf', (i) => `${Math.round(m.teams[i].longest)} m`);
     row('Im Graben', (i) => `${m.teams[i].ditches}`);
+    row('Strafwürfe', (i) => `${m.teams[i].penalties}`);
     box.append(el('p', 'muted', `${this.course.name} · ${(this.course.length / 1000).toFixed(2)} km`), table);
     const again = el('button', 'btn primary', 'Revanche');
     again.addEventListener('click', () => this.end.rematch());

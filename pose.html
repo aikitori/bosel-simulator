@@ -1,0 +1,25 @@
+<!doctype html><html><body style="margin:0"><canvas id="c" style="width:1400px;height:500px"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { loadAssets } from './src/game/assets';
+import { Thrower } from './src/game/Scene3D';
+const a = await loadAssets();
+const r = new THREE.WebGLRenderer({ canvas: c }); r.setSize(1400, 500, false);
+const s = new THREE.Scene(); s.background = new THREE.Color(0xdddddd);
+s.add(new THREE.HemisphereLight(0xffffff, 0x666666, 2));
+const names = new Set();
+const angles = [-1.2, -0.6, 0, 0.8, 1.6, 2.2];
+angles.forEach((ang, i) => {
+  const t = new Thrower(a); t.setColor('#d7263d');
+  t.root.position.x = i * 1.5; s.add(t.root);
+  t.update(0.5); t.swingArm(ang);
+  t.root.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => names.add(m.name)); });
+});
+console.log([...names].join(','));
+const cam = new THREE.PerspectiveCamera(30, 1400 / 500, 0.1, 100);
+cam.position.set(3.75, 1.2, 0); cam.position.x = 3.75; cam.position.z = 0;
+// Seitenansicht: Figuren schauen nach -Z, Kamera von +X
+cam.position.set(14, 1.1, -0.01); cam.lookAt(3.75, 1.0, 0);
+const cam2 = new THREE.PerspectiveCamera(30, 1400 / 500, 0.1, 100); cam2.position.set(3.75, 1.1, 14); cam2.lookAt(3.75, 1, 0);
+r.render(s, location.hash === '#back' ? cam2 : cam); window.done = true;
+</script></body></html>

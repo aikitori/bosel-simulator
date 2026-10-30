@@ -1,4 +1,5 @@
 import './style.css';
+import { loadAssets } from './game/assets';
 import { Game } from './game/Game';
 import { MapPicker } from './map/MapPicker';
 import type { Course } from './osm/course';
@@ -21,10 +22,21 @@ function clear(): void {
   app.innerHTML = '';
 }
 
-function play(course: Course): void {
+async function play(course: Course): Promise<void> {
   clear();
+  const loading = el('div', 'loading', 'Lade Landschaft …');
+  app.append(loading);
+  let assets;
+  try {
+    assets = await loadAssets();
+  } catch (e) {
+    console.error(e);
+    loading.textContent = 'Modelle konnten nicht geladen werden.';
+    return;
+  }
+  loading.remove();
   const s = loadSettings();
-  current = new Game(app, course, s.teams, s.order, {
+  current = new Game(app, course, s.teams, s.order, assets, {
     rematch: () => play(course),
     menu: () => home(),
   });

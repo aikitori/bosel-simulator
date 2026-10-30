@@ -6,16 +6,55 @@ export type Surface = 'asphalt' | 'paved' | 'gravel' | 'dirt';
 /** Was neben der Straße liegt: ein Graben (Sloot) auf dem Land, sonst Gehweg/Garten. */
 export type Roadside = 'ditch' | 'town';
 
+export type RoofShape = 'flat' | 'gabled' | 'hipped';
+
 export interface Building {
   footprint: Vec2[];
+  /** Höhe bis zur Traufe. */
   height: number;
+  roof?: RoofShape;
+  /** Firsthöhe über der Traufe. */
+  roofHeight?: number;
+  material?: 'brick' | 'plaster';
+  wallColor?: string;
+  roofColor?: string;
+}
+
+export type TreeKind = 'birch' | 'round' | 'poplar' | 'oak' | 'bush';
+
+export interface Tree {
+  p: Vec2;
+  kind: TreeKind;
+  scale: number;
+}
+
+export type AreaKind = 'forest' | 'farmland' | 'meadow' | 'grass' | 'residential' | 'farmyard' | 'orchard' | 'scrub';
+
+export interface Area {
+  kind: AreaKind;
+  poly: Vec2[];
+}
+
+export interface Waterway {
+  line: Vec2[];
+  width: number;
+}
+
+/** Kulisse aus OSM: alles außer der Straße selbst. Ältere gespeicherte Strecken haben nur Teile davon. */
+export interface Scenery {
+  buildings: Building[];
+  water: Vec2[][];
+  trees?: Tree[];
+  areas?: Area[];
+  hedges?: Vec2[][];
+  waterways?: Waterway[];
 }
 
 /**
  * Eine spielbare Strecke in lokalen Metern. `points` sind gleichmäßig verteilt
  * (Abstand `STEP`), alle Arrays haben dieselbe Länge.
  */
-export interface Course {
+export interface Course extends Scenery {
   name: string;
   origin: LatLon;
   points: Vec2[];
@@ -26,9 +65,6 @@ export interface Course {
   surface: Surface[];
   roadside: Roadside[];
   length: number;
-  buildings: Building[];
-  /** Wasserflächen (Teiche, Kanäle) als Polygone – nur Kulisse. */
-  water: Vec2[][];
 }
 
 export const STEP = 2;
@@ -53,8 +89,7 @@ export function buildCourse(
   name: string,
   origin: LatLon,
   raw: RawRoute,
-  buildings: Building[] = [],
-  water: Vec2[][] = [],
+  scenery: Scenery = { buildings: [], water: [] },
 ): Course {
   const n = raw.points.length;
   if (n < 2) throw new Error('Strecke braucht mindestens zwei Punkte');
@@ -98,7 +133,7 @@ export function buildCourse(
   const smoothHw = smoothNumbers(hw, 6);
 
   // 3. nach dem Glätten neu abtasten, damit die Abstände wieder genau STEP sind
-  return resample(name, origin, smoothed, smoothHw, surf, side, buildings, water);
+  return { ...resample(name, origin, smoothed, smoothHw, surf, side), ...scenery };
 }
 
 function smooth(pts: Vec2[], radius: number): Vec2[] {
@@ -134,9 +169,7 @@ function resample(
   hw: number[],
   surf: Surface[],
   side: Roadside[],
-  buildings: Building[],
-  water: Vec2[][],
-): Course {
+): Omit<Course, keyof Scenery> {
   const points: Vec2[] = [pts[0]];
   const halfWidth = [hw[0]];
   const surface = [surf[0]];
@@ -176,8 +209,6 @@ function resample(
     surface,
     roadside,
     length: cum[cum.length - 1],
-    buildings,
-    water,
   };
 }
 

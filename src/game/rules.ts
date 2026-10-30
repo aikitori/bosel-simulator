@@ -21,6 +21,7 @@ export interface TeamState {
   nextPlayer: number;
   finished: boolean;
   ditches: number;
+  penalties: number;
   longest: number;
 }
 
@@ -47,6 +48,7 @@ export function newMatch(teams: [TeamSetup, TeamSetup], order: Order): Match {
     nextPlayer: 0,
     finished: false,
     ditches: 0,
+    penalties: 0,
     longest: 0,
   });
   return { teams: [team(teams[0]), team(teams[1])], order, current: 0, history: [] };
@@ -85,6 +87,12 @@ function nextTeam(m: Match): number {
   // Traditionell: wer hinten liegt, wirft; bei Gleichstand die andere Mannschaft
   if (a.s === b.s) return 1 - m.current;
   return a.s < b.s ? 0 : 1;
+}
+
+/** Strafwurf, z. B. wenn die Kugel nicht aus dem Graben gefischt wurde. */
+export function addPenalty(m: Match, team: number): void {
+  m.teams[team].throws++;
+  m.teams[team].penalties++;
 }
 
 /** Sieger-Index oder `null` bei Gleichstand. */

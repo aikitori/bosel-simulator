@@ -1,4 +1,6 @@
 import { headingAt, pointAt, project, VERGE, type Course, type Surface } from '../osm/course';
+import { inside as insideObstacle, type Obstacle, type ObstacleKind } from './obstacles';
+import { mulberry32 } from '../random';
 import type { Vec2 } from '../geo';
 
 /** Straßenboßel-Kugel: Gummi, 10 cm Durchmesser. */
@@ -18,6 +20,8 @@ const ROLL: Record<Surface | 'verge', number> = {
 };
 /** Dachprofil der Fahrbahn: die Kugel driftet zu den Rändern. */
 const CAMBER = 0.012;
+/** Zusätzliches Bremsen im Wasser einer Pfütze (Anteil von g). */
+const PUDDLE_DRAG = 1.1;
 /** Bankette fällt zum Graben hin ab. */
 const VERGE_SLOPE = 0.06;
 
@@ -47,22 +51,12 @@ export interface ThrowResult {
   gained: number;
   /** Erster Bodenkontakt (für Staub/Geräusch). */
   firstBounce: number;
+  /** Getroffene Hindernisse in Reihenfolge, mit Bildnummer (für Spritzer und Anzeige). */
+  hits: { kind: ObstacleKind; frame: number }[];
 }
 
 export function launchSpeed(power: number): number {
   return 7 + 19 * Math.max(0, Math.min(1, power));
-}
-
-/** Kleiner, deterministischer Zufall – gleiche Eingabe, gleicher Wurf (Tests, Wiederholung). */
-export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 /**
@@ -70,7 +64,13 @@ export function mulberry32(seed: number): () => number {
  * auf und rollt dann. Verlässt sie die Straße über die Bankette hinaus, landet sie im Graben
  * (Land) bzw. im Aus (Ort); weiter geht es dort, wo sie die Straße verlassen hat.
  */
-export function simulateThrow(course: Course, start: { s: number; d: number }, input: ThrowInput, seed = 1): ThrowResult {
+export function simulateThrow(
+  course: Course,
+  start: { s: number; d: number },
+  input: ThrowInput,
+  seed = 1,
+  obstacles: Obstacle[] = [],
+): ThrowResult {
   const rand = mulberry32(seed);
   const base = pointAt(course, start.s);
   const heading = headingAt(course, start.s);
@@ -96,6 +96,14 @@ export function simulateThrow(course: Course, start: { s: number; d: number }, i
   let noise = 0;
   let outcome: Outcome = 'road';
   const frames: Frame[] = [{ x, y, z }];
+  const hits: ThrowResult['hits'] = [];
+  const touched = new Set<Obstacle>();
+  const hit = (o: Obstacle) => {
+    if (touched.has(o)) return false;
+    touched.add(o);
+    hits.push({ kind: o.kind, frame: frames.length });
+    return true;
+  };
 
   for (let step = 1; step * DT < MAX_TIME; step++) {
     const pos = project(course, { x, y }, hint);
@@ -109,6 +117,50 @@ export function simulateThrow(course: Course, start: { s: number; d: number }, i
     if (pos.s >= course.length - 0.3 && pos.idx >= course.points.length - 3) {
       outcome = 'finish';
       break;
+    }
+
+    // Hindernisse wirken nur dicht am Boden
+    let inPuddle = false;
+    if (z < 0.25) {
+      for (const o of obstacles) {
+        if (o.s < pos.s - 4) continue;
+        if (o.s > pos.s + 4) break;
+        if (o.kind === 'stone') {
+          const dx = x - o.x;
+          const dy = y - o.y;
+          const dd = Math.hypot(dx, dy);
+          const min = o.r + BALL_RADIUS;
+          if (dd >= min || z > o.r * 1.5) continue;
+          const nx = dx / (dd || 1);
+          const ny = dy / (dd || 1);
+          const vn = vx * nx + vy * ny;
+          if (vn >= 0) continue;
+          // Abprall am Stein, die Kugel hüpft dabei ein wenig
+          vx -= 1.5 * vn * nx;
+          vy -= 1.5 * vn * ny;
+          x = o.x + nx * min;
+          y = o.y + ny * min;
+          if (rolling) {
+            rolling = false;
+            vz = Math.min(2, -vn * 0.3);
+          }
+          hit(o);
+        } else if (insideObstacle(o, x, y) < 1) {
+          if (o.kind === 'puddle') {
+            inPuddle = true;
+            hit(o);
+          } else if (rolling && hit(o)) {
+            // Schlagloch: Kugel verliert Tempo, springt heraus und wird seitlich versetzt
+            const v = Math.hypot(vx, vy);
+            const kick = (rand() < 0.5 ? -1 : 1) * (0.6 + rand() * 0.9) * Math.min(1, v / 6);
+            const [ux, uy] = [vx / (v || 1), vy / (v || 1)];
+            vx = vx * 0.78 - uy * kick;
+            vy = vy * 0.78 + ux * kick;
+            vz = 0.8 + rand() * 0.6;
+            rolling = false;
+          }
+        }
+      }
     }
 
     if (!rolling) {
@@ -128,9 +180,9 @@ export function simulateThrow(course: Course, start: { s: number; d: number }, i
           outcome = course.roadside[pos.idx] === 'ditch' ? 'ditch' : 'out';
           break;
         }
-        const soft = !onRoad; // Gras schluckt den Aufprall
+        const soft = !onRoad || inPuddle; // Gras und Wasser schlucken den Aufprall
         vz = -vz * (soft ? 0.12 : 0.38);
-        const keep = soft ? 0.6 : 0.9;
+        const keep = inPuddle ? 0.5 : soft ? 0.6 : 0.9;
         vx *= keep;
         vy *= keep;
         if (vz < 0.7) {
@@ -145,7 +197,7 @@ export function simulateThrow(course: Course, start: { s: number; d: number }, i
       }
       const v = Math.hypot(vx, vy);
       if (v < 0.05) break;
-      const mu = onRoad ? ROLL[course.surface[pos.idx]] : ROLL.verge;
+      const mu = (onRoad ? ROLL[course.surface[pos.idx]] : ROLL.verge) + (inPuddle ? PUDDLE_DRAG : 0);
       // Querneigung: auf der Fahrbahn leicht, auf der Bankette stärker nach außen
       const seg = course.points[Math.min(pos.idx + 1, course.points.length - 1)];
       const a0 = course.points[pos.idx];
@@ -207,5 +259,5 @@ export function simulateThrow(course: Course, start: { s: number; d: number }, i
     rest = { s: pos.s, d, p: { x: at.p.x - h.y * d, y: at.p.y + h.x * d } };
   }
 
-  return { frames, outcome, rest, final, gained: rest.s - start.s, firstBounce: Math.max(0, firstBounce) };
+  return { frames, outcome, rest, final, gained: rest.s - start.s, firstBounce: Math.max(0, firstBounce), hits };
 }

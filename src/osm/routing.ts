@@ -1,6 +1,7 @@
-import { dist, haversine, Projection, type LatLon, type Vec2 } from '../geo';
-import { buildCourse, type Building, type Course, type RawRoute, type Roadside, type Surface } from './course';
-import type { OsmWay } from './overpass';
+import { haversine, Projection, type LatLon } from '../geo';
+import { buildCourse, type Course, type RawRoute, type Roadside, type Surface } from './course';
+import type { OsmElement, OsmWay } from './overpass';
+import { parseScenery } from './scenery';
 
 /**
  * Wegsuche auf den OSM-Straßen: kürzester Weg durch alle angetippten Punkte. Kleine Straßen
@@ -214,41 +215,7 @@ export function route(g: RoadGraph, waypoints: LatLon[]): RoutedLine | { error: 
   return { line, infos, length };
 }
 
-function segmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
-  const ex = b.x - a.x;
-  const ey = b.y - a.y;
-  const len2 = ex * ex + ey * ey;
-  const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * ex + (p.y - a.y) * ey) / len2)) : 0;
-  return dist(p, { x: a.x + ex * t, y: a.y + ey * t });
-}
-
-/** Häuser und Wasser aus OSM in lokale Meter, nur was nah genug an der Strecke liegt. */
-function scenery(ways: OsmWay[], proj: Projection, centerline: Vec2[]): { buildings: Building[]; water: Vec2[][] } {
-  const buildings: Building[] = [];
-  const water: Vec2[][] = [];
-  const near = (poly: Vec2[]) => {
-    const c = poly[0];
-    for (let i = 0; i < centerline.length - 1; i++) if (segmentDistance(c, centerline[i], centerline[i + 1]) < 160) return true;
-    return false;
-  };
-  for (const w of ways) {
-    const tags = w.tags ?? {};
-    const poly = w.geometry.map((p) => proj.toLocal(p));
-    if (poly.length < 4 || !near(poly)) continue;
-    poly.pop(); // geschlossener Ring: letzter Punkt = erster
-    if (tags.building) {
-      const levels = parseFloat(tags['building:levels'] ?? '');
-      const h = parseFloat(tags.height ?? '');
-      const height = Number.isFinite(h) ? h : Number.isFinite(levels) ? levels * 3 + 2 : /garage|shed|carport/.test(tags.building) ? 3 : 7;
-      buildings.push({ footprint: poly, height: Math.min(height, 60) });
-    } else {
-      water.push(poly);
-    }
-  }
-  return { buildings, water };
-}
-
-export function courseFromRoute(name: string, r: RoutedLine, sceneryWays: OsmWay[]): Course {
+export function courseFromRoute(name: string, r: RoutedLine, sceneryElements: OsmElement[]): Course {
   const proj = new Projection(r.line[0]);
   const points = r.line.map((p) => proj.toLocal(p));
   const raw: RawRoute = {
@@ -257,6 +224,5 @@ export function courseFromRoute(name: string, r: RoutedLine, sceneryWays: OsmWay
     surface: r.infos.map((i) => i.surface),
     roadside: r.infos.map((i) => i.roadside),
   };
-  const { buildings, water } = scenery(sceneryWays, proj, points);
-  return buildCourse(name, r.line[0], raw, buildings, water);
+  return buildCourse(name, r.line[0], raw, parseScenery(sceneryElements, proj, points));
 }

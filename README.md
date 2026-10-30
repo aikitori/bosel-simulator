@@ -15,9 +15,12 @@
 
 ## Features
 
-- **Real routes:** tap start and finish on the map, extra taps add detours. The route follows OSM roads, with road width, surface (asphalt, clinker, gravel) and nearby buildings.
-- **3D thrower view:** run-up, underhand throw, the camera chases the ball.
+- **Real routes:** tap start and finish on the map, extra taps add detours. The route follows OSM roads.
+- **Built from OpenStreetMap:** road width and surface (asphalt, clinker, gravel, dirt), houses with gabled or hipped roofs and brick or plaster walls, single trees, tree rows, woods, hedges, meadows with cows and sheep, ditches and canals.
+- **3D thrower view:** animated character with run-up and underhand throw, the camera chases the ball.
 - **Physics:** the ball bounces, rolls, drifts to the road edge and runs straight on in bends – right into the ditch.
+- **Random obstacles:** potholes knock the ball off course, puddles slow it down, stones deflect it.
+- **Kloot in de Sloot:** if the ball lands in the ditch, fish it out with the net in a mini-game – or take a penalty throw.
 - **Two teams on one device:** take turns or play the traditional way (whoever is behind throws). Optional player names per team.
 - **Offline practice course** and saved routes.
 
@@ -25,15 +28,15 @@
 
 1. Put your finger on the screen and flick upwards – the faster, the farther.
 2. Flick at an angle to aim. Mind the bends!
-3. If the ball ends up in the ditch, play continues where it left the road.
+3. If the ball ends up in the ditch, fish it out with the net (move with your finger, release to scoop – not while it's under water). Three tries in ten seconds, otherwise +1 penalty throw. Play continues where the ball left the road.
 4. The team that reaches the finish with fewer throws wins. Tap to fast-forward a throw.
 
 ## Development
 
 ```
 src/
-  osm/     Overpass queries, routing (Dijkstra), course model, demo course
-  game/    physics, rules, Three.js scene, swipe input, HUD
+  osm/     Overpass queries, routing (Dijkstra), course model, OSM scenery, demo course
+  game/    physics, obstacles, rules, Three.js scene and world, swipe input, HUD, net mini-game
   map/     Leaflet route picker
 test/      Vitest tests (physics, rules, routing on OSM sample data)
 android/   Capacitor Android project
@@ -49,4 +52,7 @@ npm run android:sync
 
 Every push to `main` builds a signed APK release and the web version (GitHub Pages).
 
+## Credits
+
+Models by [Quaternius](https://quaternius.com), textures by [Poly Haven](https://polyhaven.com) – all CC0, see [CREDITS.md](CREDITS.md).
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.

@@ -59,3 +59,31 @@ describe('Wurf', () => {
     expect(r.rest.s).toBe(c.length);
   });
 });
+
+describe('Hindernisse', () => {
+  const at = (kind: 'stone' | 'puddle' | 'pothole', s: number, d: number, r: number) => ({ kind, s, d, x: -d, y: s, r, angle: Math.PI / 2 });
+
+  it('eine Pfütze bremst die rollende Kugel', () => {
+    const c = straight();
+    const free = simulateThrow(c, { s: 0, d: 0 }, { yaw: 0, power: 0.6 }, 3);
+    const wet = simulateThrow(c, { s: 0, d: 0 }, { yaw: 0, power: 0.6 }, 3, [at('puddle', 60, 0, 2)]);
+    expect(wet.hits.map((h) => h.kind)).toContain('puddle');
+    expect(wet.gained).toBeLessThan(free.gained - 10);
+  });
+
+  it('ein Stein lenkt die Kugel ab', () => {
+    const c = straight();
+    const r = simulateThrow(c, { s: 0, d: 0 }, { yaw: 0, power: 0.6 }, 3, [at('stone', 50, 0.08, 0.15)]);
+    expect(r.hits[0]?.kind).toBe('stone');
+    const free = simulateThrow(c, { s: 0, d: 0 }, { yaw: 0, power: 0.6 }, 3);
+    expect(Math.abs(r.rest.d - free.rest.d)).toBeGreaterThan(0.3);
+  });
+
+  it('ein Schlagloch kostet Weite', () => {
+    const c = straight();
+    const free = simulateThrow(c, { s: 0, d: 0 }, { yaw: 0, power: 0.6 }, 3);
+    const r = simulateThrow(c, { s: 0, d: 0 }, { yaw: 0, power: 0.6 }, 3, [at('pothole', 50, 0, 0.5)]);
+    expect(r.hits[0]?.kind).toBe('pothole');
+    expect(r.gained).toBeLessThan(free.gained);
+  });
+});
