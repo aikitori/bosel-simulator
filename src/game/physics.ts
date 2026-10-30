@@ -12,10 +12,10 @@ const MAX_TIME = 45;
 const RELEASE_HEIGHT = 0.35;
 /** Rollwiderstand als Anteil von g je Belag, Bankette ist Gras. */
 const ROLL: Record<Surface | 'verge', number> = {
-  asphalt: 0.1,
-  paved: 0.13,
-  gravel: 0.2,
-  dirt: 0.28,
+  asphalt: 0.075,
+  paved: 0.1,
+  gravel: 0.16,
+  dirt: 0.22,
   verge: 0.9,
 };
 /** Dachprofil der Fahrbahn: die Kugel driftet zu den Rändern. */
@@ -56,7 +56,7 @@ export interface ThrowResult {
 }
 
 export function launchSpeed(power: number): number {
-  return 7 + 19 * Math.max(0, Math.min(1, power));
+  return 6 + 15.5 * Math.max(0, Math.min(1, power));
 }
 
 /**
@@ -78,7 +78,7 @@ export function simulateThrow(
   const origin = { x: base.p.x + left.x * start.d, y: base.p.y + left.y * start.d };
 
   const speed = launchSpeed(input.power);
-  const pitch = 0.1 + 0.07 * input.power;
+  const pitch = 0.06 + 0.05 * input.power;
   const cos = Math.cos(input.yaw);
   const sin = Math.sin(input.yaw);
   const dir = { x: heading.x * cos + left.x * sin, y: heading.y * cos + left.y * sin };
@@ -182,10 +182,10 @@ export function simulateThrow(
         }
         const soft = !onRoad || inPuddle; // Gras und Wasser schlucken den Aufprall
         vz = -vz * (soft ? 0.12 : 0.38);
-        const keep = inPuddle ? 0.5 : soft ? 0.6 : 0.9;
+        const keep = inPuddle ? 0.5 : soft ? 0.6 : 0.94;
         vx *= keep;
         vy *= keep;
-        if (vz < 0.7) {
+        if (vz < 0.9) {
           vz = 0;
           rolling = true;
         }

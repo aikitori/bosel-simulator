@@ -99,6 +99,22 @@ export class Thrower {
   }
 }
 
+/** Teamfarbe mit hellen Streifen, damit man das Rollen sieht. */
+function ballTexture(color: string): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 32;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 32);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillRect(0, 14, 64, 4);
+  for (let x = 0; x < 64; x += 16) ctx.fillRect(x, 0, 3, 32);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 /** Geräusche und Vibrationen eines Wurfs, zeitlich an die Bildfolge gebunden. */
 function soundEvents(r: ThrowResult): { frame: number; play: () => void }[] {
   const out: { frame: number; play: () => void }[] = [];
@@ -187,7 +203,7 @@ export class Scene3D {
     this.world = new World(this.scene, course, assets);
 
     for (const color of teamColors) {
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_RADIUS, 20, 14), new THREE.MeshStandardMaterial({ color, roughness: 0.4 }));
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_RADIUS, 20, 14), new THREE.MeshStandardMaterial({ map: ballTexture(color), roughness: 0.4 }));
       ball.castShadow = true;
       ball.visible = false;
       this.scene.add(ball);
@@ -434,7 +450,15 @@ export class Scene3D {
       const b = r.frames[i1];
       const k = fi - i0;
       const ball = this.balls[this.activeBall];
+      const prev = ball.position.clone();
       ball.position.set(a.x + (b.x - a.x) * k, a.z + (b.z - a.z) * k + BALL_RADIUS, -(a.y + (b.y - a.y) * k));
+      // Rollen: Drehung um die Achse quer zur Bewegung, Winkel = Weg / Radius
+      const move = ball.position.clone().sub(prev).setY(0);
+      const len = move.length();
+      if (len > 1e-5 && len < 2) {
+        const axis = new THREE.Vector3(0, 1, 0).cross(move).normalize();
+        ball.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, len / BALL_RADIUS));
+      }
       while (this.nextHit < r.hits.length && r.hits[this.nextHit].frame <= fi) this.burst(ball.position, r.hits[this.nextHit++].kind);
       while (this.nextSound < this.sounds.length && this.sounds[this.nextSound].frame <= fi) this.sounds[this.nextSound++].play();
       // Rollgeräusch nach Tempo, nur am Boden
