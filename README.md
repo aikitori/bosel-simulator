@@ -16,6 +16,7 @@
 ## Features
 
 - **Real routes:** tap start and finish on the map, extra taps add detours. The route follows OSM roads.
+- **Fast and cached:** routes from [OSRM](https://routing.openstreetmap.de), landscape from [VersaTiles](https://versatiles.org) vector tiles, single trees and hedges from Overpass in the background – everything is cached on the device.
 - **Built from OpenStreetMap:** road width and surface (asphalt, clinker, gravel, dirt), houses with gabled or hipped roofs and brick or plaster walls, single trees, tree rows, woods, hedges, meadows with cows and sheep, ditches and canals.
 - **3D thrower view:** animated character with run-up and underhand throw, the camera chases the ball.
 - **Physics:** the ball bounces, rolls, drifts to the road edge and runs straight on in bends – right into the ditch.

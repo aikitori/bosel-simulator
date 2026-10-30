@@ -4,6 +4,8 @@ import { OBSTACLE_NAME, placeObstacles, type Obstacle } from './obstacles';
 import { gradeTiming, simulateThrow, type Outcome, type ThrowInput, type TimingGrade } from './physics';
 import { addPenalty, currentPlayer, isOver, newMatch, recordThrow, winner, type Match, type Order, type TeamSetup } from './rules';
 import type { Assets } from './assets';
+import type { Extras } from '../map/MapPicker';
+import { saveCourse } from '../storage';
 import { sound } from './audio';
 import { kescher } from './Kescher';
 import { IDEAL_RELEASE, Scene3D } from './Scene3D';
@@ -64,6 +66,7 @@ export class Game {
     order: Order,
     assets: Assets,
     private readonly end: GameEnd,
+    extras?: Promise<Extras>,
   ) {
     this.match = newMatch(teams, order);
     // Im Dev-Modus lässt sich die Dichte per ?hindernisse=200 hochdrehen (zum Ansehen)
@@ -120,6 +123,17 @@ export class Game {
     }
     this.updateHud();
     canvas.addEventListener('pointerdown', () => sound.unlock());
+    // Bäume und Hecken kommen im Hintergrund nach – dann wachsen sie in die Landschaft
+    extras?.then(
+      ({ trees, hedges }) => {
+        if (this.disposed || (!trees.length && !hedges.length)) return;
+        this.scene.addExtras(trees, hedges);
+        course.trees = [...(course.trees ?? []), ...trees];
+        course.hedges = [...(course.hedges ?? []), ...hedges];
+        saveCourse(course);
+      },
+      (e) => console.warn('Bäume/Hecken nicht geladen', e),
+    );
     this.turnLabel.innerHTML = '';
     this.turnLabel.append(course.name, el('small', '', ' · antippen zum Starten'));
     this.drawMinimap();
@@ -127,7 +141,10 @@ export class Game {
     this.scene.intro(() => this.nextTurn());
   }
 
+  private disposed = false;
+
   dispose(): void {
+    this.disposed = true;
     window.removeEventListener('resize', this.onResize);
     this.input.dispose();
     this.scene.dispose();

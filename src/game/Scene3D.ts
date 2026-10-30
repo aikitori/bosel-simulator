@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { headingAt, pointAt, project, type Course } from '../osm/course';
+import { headingAt, pointAt, project, type Course, type Tree } from '../osm/course';
+import type { Vec2 } from '../geo';
 import type { Assets } from './assets';
 import type { Obstacle, ObstacleKind } from './obstacles';
 import { buzz, sound } from './audio';
@@ -292,6 +293,10 @@ export class Scene3D {
 
   hideBall(team: number, hidden: boolean): void {
     this.balls[team].visible = !hidden;
+  }
+
+  addExtras(trees: Tree[], hedges: Vec2[][]): void {
+    this.world.addExtras(trees, hedges);
   }
 
   setObstacles(list: Obstacle[]): void {

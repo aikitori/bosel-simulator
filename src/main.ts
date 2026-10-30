@@ -1,7 +1,7 @@
 import './style.css';
 import { loadAssets } from './game/assets';
 import { Game } from './game/Game';
-import { MapPicker } from './map/MapPicker';
+import { MapPicker, type Extras } from './map/MapPicker';
 import type { Course } from './osm/course';
 import { demoCourse } from './osm/demo';
 import { deleteCourse, loadCourses, loadSettings, saveCourse, saveSettings, TEAM_COLORS, type Settings } from './storage';
@@ -22,7 +22,7 @@ function clear(): void {
   app.innerHTML = '';
 }
 
-async function play(course: Course): Promise<void> {
+async function play(course: Course, extras?: Promise<Extras>): Promise<void> {
   clear();
   const loading = el('div', 'loading', 'Lade Landschaft …');
   app.append(loading);
@@ -36,19 +36,27 @@ async function play(course: Course): Promise<void> {
   }
   loading.remove();
   const s = loadSettings();
-  current = new Game(app, course, s.teams, s.order, assets, {
-    rematch: () => play(course),
-    menu: () => home(),
-  });
+  current = new Game(
+    app,
+    course,
+    s.teams,
+    s.order,
+    assets,
+    {
+      rematch: () => play(course),
+      menu: () => home(),
+    },
+    extras,
+  );
 }
 
 function pick(): void {
   clear();
   current = new MapPicker(
     app,
-    (course) => {
+    (course, extras) => {
       saveCourse(course);
-      play(course);
+      void play(course, extras);
     },
     () => home(),
   );

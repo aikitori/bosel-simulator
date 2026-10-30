@@ -414,17 +414,22 @@ export class World {
     }
   }
 
-  private buildTrees(): void {
-    const rand = mulberry32(99);
-    const trees: Tree[] = this.course.trees ?? [];
+  private buildTrees(trees: Tree[] = this.course.trees ?? []): void {
+    const rand = mulberry32(99 + trees.length);
     this.instanced(
       trees.map((t) => ({ p: t.p, parts: this.assets.trees[t.kind as TreeKind], scale: t.scale, yaw: rand() * Math.PI * 2 })),
     );
   }
 
-  private buildHedges(): void {
+  /** Nachgeladene Bäume und Hecken (Overpass im Hintergrund) in die Landschaft setzen. */
+  addExtras(trees: Tree[], hedges: Vec2[][]): void {
+    this.buildTrees(trees);
+    this.buildHedges(hedges);
+  }
+
+  private buildHedges(hedges: Vec2[][] = this.course.hedges ?? []): void {
     const geos: THREE.BufferGeometry[] = [];
-    for (const line of this.course.hedges ?? []) {
+    for (const line of hedges) {
       for (let i = 0; i < line.length - 1; i++) {
         const a = line[i];
         const b = line[i + 1];

@@ -24,10 +24,16 @@ const MAX_YAW = 0.6;
 const FULL_BEND = 0.6;
 const MIN_BEND = 0.08;
 
-/** Aufwärtstempo (Bildschirmhöhen/s) zwischen einem Punkt und dem Punkt ~WINDOW_MS davor. */
+/**
+ * Aufwärtstempo (Bildschirmhöhen/s) zwischen einem Punkt und dem frühesten Punkt höchstens
+ * WINDOW_MS davor. Nie über das Fenster hinaus: Beim Anlauf liegt der Finger oft eine Sekunde
+ * still – würde man bis dahin zurückgehen, wirkte ein schneller Wisch plötzlich langsam.
+ */
 function speedAt(samples: Sample[], j: number, screenHeight: number): number {
   let i = j;
-  while (i > 0 && samples[j].t - samples[i].t < WINDOW_MS) i--;
+  while (i > 0 && samples[j].t - samples[i - 1].t <= WINDOW_MS) i--;
+  if (i === j) i = j - 1;
+  if (samples[j].t - samples[i].t > WINDOW_MS * 2) return 0;
   const dt = Math.max(1, samples[j].t - samples[i].t);
   return ((samples[i].y - samples[j].y) / dt) * (1000 / screenHeight);
 }

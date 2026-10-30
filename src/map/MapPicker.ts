@@ -1,17 +1,24 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LatLon } from '../geo';
-import type { Course } from '../osm/course';
-import { bboxAround, fetchRoads, fetchScenery, type BBox, type LoadState } from '../osm/overpass';
+import type { Course, Tree } from '../osm/course';
+import { bboxAround, fetchExtras, fetchRoads, type BBox, type LoadState, type OsmElement } from '../osm/overpass';
+import { parseScenery } from '../osm/scenery';
+import { tileElements, type TileProgress } from '../osm/tiles';
 import { cachedScenery } from '../osm/cache';
 import { routeOsrm } from '../osm/osrm';
 import { buildGraph, courseFromRoute, route, type RoadGraph, type RoutedLine } from '../osm/routing';
-import { haversine } from '../geo';
+import { haversine, Projection } from '../geo';
 
 /**
  * Strecke auf der OSM-Karte wählen: Start und Ziel antippen (weitere Punkte = Umweg über
  * diese Stelle). Die Route folgt den Straßen aus OpenStreetMap.
  */
+
+export interface Extras {
+  trees: Tree[];
+  hedges: Course['points'][];
+}
 
 const MIN_LENGTH = 150;
 const MAX_LENGTH = 15000;
@@ -41,7 +48,7 @@ export class MapPicker {
 
   constructor(
     host: HTMLElement,
-    private readonly onDone: (course: Course) => void,
+    private readonly onDone: (course: Course, extras: Promise<Extras>) => void,
     private readonly onCancel: () => void,
   ) {
     this.root = el('div', 'picker');
@@ -247,37 +254,44 @@ export class MapPicker {
     const r = this.routed;
     if (!r) return;
     this.playBtn.disabled = true;
-    let onProgress: ((s: LoadState) => void) | undefined;
-    let sceneryFailed = false;
-    const loadScenery = async () => {
-      try {
-        // Schon geladene Abschnitte kommen aus dem Speicher, nur Lücken gehen an Overpass
-        const res = await cachedScenery(r.line, 120, (gaps) => {
-          onProgress = this.progress('Lade Straßenbelag, Häuser und Bäume …');
-          return fetchScenery(gaps, 120, AbortSignal.timeout(30000), onProgress);
-        });
-        return res.elements;
-      } catch {
-        // ohne Kulisse spielbar, nur kahler
-        sceneryFailed = true;
-        return [];
-      }
-    };
-    this.setStatus('Prüfe gespeicherte Umgebung …', false, true);
-    const [scenery, place] = await Promise.all([
-      loadScenery(),
+    const started = performance.now();
+    const label = (p: TileProgress) => `Lade Kartenkacheln ${p.done} von ${p.total} … ${Math.round((performance.now() - started) / 1000)} s`;
+    this.setStatus('Lade Kartenkacheln …', false, true);
+    let elements: OsmElement[] = [];
+    let failed = false;
+    const [, place] = await Promise.all([
+      tileElements(r.line, 160, AbortSignal.timeout(30000), (p) => this.setStatus(label(p), false, true)).then(
+        (e) => (elements = e),
+        (e) => {
+          // ohne Kulisse spielbar, nur kahler
+          console.error(e);
+          failed = true;
+        },
+      ),
       this.placeName ? Promise.resolve(this.placeName) : reverseName(r.line[0]),
     ]);
     this.setStatus('Baue die Landschaft …', false, true);
     await new Promise((res) => setTimeout(res, 0));
     const km = (r.length / 1000).toLocaleString('de-DE', { maximumFractionDigits: 1 });
-    const course = courseFromRoute(`${place || 'Eigene Strecke'} (${km} km)`, r, scenery);
-    if (sceneryFailed) {
-      this.setStatus('OpenStreetMap-Server überlastet – Strecke ohne Häuser und Bäume.', true);
+    const course = courseFromRoute(`${place || 'Eigene Strecke'} (${km} km)`, r, elements);
+    if (failed) {
+      this.setStatus('Kartenkacheln nicht erreichbar – Strecke ohne Häuser.', true);
       await new Promise((res) => setTimeout(res, 2500));
     }
-    this.onDone(course);
+    this.onDone(course, loadExtras(course, r.line));
   }
+}
+
+/**
+ * Einzelbäume, Baumreihen und Hecken (nicht in den Vektorkacheln) im Hintergrund von Overpass
+ * holen – gecacht, und wenn es nicht klappt, fehlen eben nur diese Details.
+ */
+export async function loadExtras(course: Course, line: LatLon[]): Promise<Extras> {
+  const res = await cachedScenery(line, 120, (gaps) => fetchExtras(gaps, 120, AbortSignal.timeout(45000)));
+  const wanted = res.elements.filter((e) => e.tags?.natural === 'tree' || e.tags?.natural === 'tree_row' || e.tags?.barrier === 'hedge');
+  const proj = new Projection(course.origin);
+  const s = parseScenery(wanted, proj, course.points);
+  return { trees: s.trees ?? [], hedges: s.hedges ?? [] };
 }
 
 async function reverseName(p: LatLon): Promise<string> {

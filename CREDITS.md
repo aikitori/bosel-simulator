@@ -14,4 +14,5 @@ All third-party assets are public domain (CC0 1.0).
 | Sheep | `public/models/sheep.glb` | Quaternius | [poly.pizza/m/C39AUXUUes](https://poly.pizza/m/C39AUXUUes) |
 | Textures: asphalt_02, brick_pavement, stony_dirt_path, gravel_road, sparse_grass, grass_ground, red_brick_03, plastered_wall, clay_roof_tiles | `public/textures/*.jpg` (resized, some recolored) | Poly Haven | [polyhaven.com](https://polyhaven.com) |
 
+Vector tiles by [VersaTiles](https://versatiles.org), routing by [FOSSGIS OSRM](https://routing.openstreetmap.de).
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, available under the ODbL.

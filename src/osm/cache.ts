@@ -9,6 +9,7 @@ import type { OsmElement } from './overpass';
 
 const DB = 'bosel';
 const STORE = 'corridors';
+const TILES = 'tiles';
 const MAX_AGE_MS = 60 * 24 * 3600 * 1000;
 /** Abtastabstand der Route für die Abdeckungsprüfung. */
 const SAMPLE = 15;
@@ -25,8 +26,12 @@ interface Corridor {
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
+    const req = indexedDB.open(DB, 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
+      if (!db.objectStoreNames.contains(TILES)) db.createObjectStore(TILES);
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -54,6 +59,20 @@ async function loadAll(): Promise<Corridor[]> {
 async function save(c: Corridor): Promise<void> {
   const db = await open();
   await request(db.transaction(STORE, 'readwrite').objectStore(STORE).add(c));
+  db.close();
+}
+
+/** Vektorkachel aus dem Speicher (oder `undefined`, wenn fehlend oder zu alt). */
+export async function tileGet(key: string): Promise<ArrayBuffer | undefined> {
+  const db = await open();
+  const hit = await request(db.transaction(TILES).objectStore(TILES).get(key) as IDBRequest<{ date: number; data: ArrayBuffer } | undefined>);
+  db.close();
+  return hit && Date.now() - hit.date < MAX_AGE_MS ? hit.data : undefined;
+}
+
+export async function tilePut(key: string, data: ArrayBuffer): Promise<void> {
+  const db = await open();
+  await request(db.transaction(TILES, 'readwrite').objectStore(TILES).put({ date: Date.now(), data }, key));
   db.close();
 }
 

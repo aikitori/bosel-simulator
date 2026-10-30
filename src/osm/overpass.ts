@@ -213,3 +213,16 @@ export function fetchScenery(lines: LatLon[][], radius: number, signal?: AbortSi
   });
   return query(`[out:json][timeout:40];(${parts.join('')});out geom qt;`, signal, onProgress);
 }
+
+/**
+ * Was die Vektorkacheln nicht enthalten: Einzelbäume, Baumreihen und Hecken. Wird im
+ * Hintergrund nachgeladen – das Spiel läuft auch ohne.
+ */
+export function fetchExtras(lines: LatLon[][], radius: number, signal?: AbortSignal): Promise<OsmElement[]> {
+  const parts = lines.map((line) => {
+    const coords = line.map((p) => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`).join(',');
+    const a = `(around:${radius},${coords})`;
+    return `node["natural"="tree"]${a};way["natural"="tree_row"]${a};way["barrier"="hedge"]${a};`;
+  });
+  return query(`[out:json][timeout:25];(${parts.join('')});out geom qt;`, signal);
+}

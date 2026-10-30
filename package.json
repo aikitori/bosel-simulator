@@ -14,7 +14,9 @@
   "dependencies": {
     "@capacitor/android": "^7.6.10",
     "@capacitor/core": "^7.6.10",
+    "@mapbox/vector-tile": "^3.0.0",
     "leaflet": "^1.9.4",
+    "pbf": "^5.1.2",
     "three": "^0.187.0"
   },
   "devDependencies": {

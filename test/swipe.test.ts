@@ -40,4 +40,13 @@ describe('Wischgeste', () => {
   it('ein gerader Strich hat keinen Drall', () => {
     expect(evaluate(stroke(200, 800, 260, 450, 150), 900)!.spin).toBe(0);
   });
+
+  it('schneller Wisch nach langem Festhalten behält volle Kraft', () => {
+    // Finger liegt beim Anlauf eine Sekunde still, dann ein schneller Wisch in 60 ms
+    const pts = [{ x: 200, y: 800, t: 0 }];
+    for (let i = 1; i <= 6; i++) pts.push({ x: 200, y: 800 - i * 70, t: 1000 + i * 10 });
+    pts.push({ x: 200, y: 380, t: 1065 });
+    const r = evaluate(pts, 900)!;
+    expect(r.power).toBe(1);
+  });
 });
