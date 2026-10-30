@@ -20,6 +20,9 @@ const ROLL: Record<Surface | 'verge', number> = {
 };
 /** Dachprofil der Fahrbahn: die Kugel driftet zu den Rändern. */
 const CAMBER = 0.012;
+/** Seitliche Beschleunigung durch vollen Drall (m/s²) und wie schnell er nachlässt (s). */
+const SPIN_ACCEL = 0.09;
+const SPIN_DECAY = 6;
 /** Zusätzliches Bremsen im Wasser einer Pfütze (Anteil von g). */
 const PUDDLE_DRAG = 1.1;
 /** Bankette fällt zum Graben hin ab. */
@@ -35,11 +38,13 @@ export interface ThrowInput {
    * Ohne Angabe: idealer Abwurf.
    */
   release?: number;
+  /** Drall −1…1, positiv = Kugel zieht beim Rollen nach links. */
+  spin?: number;
 }
 
 /** Flacher Abwurf, bei dem die Kugel am weitesten rollt. */
 export function idealPitch(power: number): number {
-  return 0.06 + 0.05 * power;
+  return 0.09 + 0.06 * power;
 }
 
 /**
@@ -87,7 +92,7 @@ export interface ThrowResult {
 }
 
 export function launchSpeed(power: number): number {
-  return 6 + 15.5 * Math.max(0, Math.min(1, power));
+  return 6 + 16.5 * Math.max(0, Math.min(1, power));
 }
 
 /**
@@ -213,11 +218,11 @@ export function simulateThrow(
           break;
         }
         const soft = !onRoad || inPuddle; // Gras und Wasser schlucken den Aufprall
-        vz = -vz * (soft ? 0.12 : 0.38);
-        const keep = inPuddle ? 0.5 : soft ? 0.8 : 0.94;
+        vz = -vz * (soft ? 0.25 : 0.66);
+        const keep = inPuddle ? 0.5 : soft ? 0.8 : 0.975;
         vx *= keep;
         vy *= keep;
-        if (vz < 0.9) {
+        if (vz < 0.35) {
           vz = 0;
           rolling = true;
         }
@@ -240,8 +245,10 @@ export function simulateThrow(
       const tilt = (onRoad ? CAMBER * (ad / Math.max(hw, 0.5)) : VERGE_SLOPE) * G * side;
       // Unebenheiten: alle 0,2 s ein neuer kleiner seitlicher Schubs
       if (step % 48 === 0) noise = (rand() - 0.5) * 0.2;
-      const ax = (-vx / v) * mu * G + nx * (tilt + noise);
-      const ay = (-vy / v) * mu * G + ny * (tilt + noise);
+      // Drall: Kraft quer zur Laufrichtung, lässt mit der Zeit nach
+      const curl = (input.spin ?? 0) * SPIN_ACCEL * Math.exp(-(step * DT) / SPIN_DECAY);
+      const ax = (-vx / v) * mu * G + nx * (tilt + noise) + (-vy / v) * curl;
+      const ay = (-vy / v) * mu * G + ny * (tilt + noise) + (vx / v) * curl;
       const nvx = vx + ax * DT;
       const nvy = vy + ay * DT;
       // Reibung darf die Kugel nicht rückwärts rollen lassen

@@ -28,7 +28,7 @@
 ## How to play
 
 1. Put your finger on the screen: the thrower starts the run-up and swings back.
-2. Flick upwards and let go when the marker is in the green zone – the release moment sets the launch angle. Too early slams the ball into the road, too late lobs it high. The faster the flick, the farther; flick at an angle to aim. Mind the bends!
+2. Flick upwards and let go when the marker is in the green zone – the release moment sets the launch angle. Too early slams the ball into the road, too late lobs it high. The faster the flick, the farther; flick at an angle to aim, curve the flick to put spin on the ball. Mind the bends!
 3. If the ball ends up in the ditch, fish it out with the net (move with your finger, release to scoop – not while it's under water). Three tries in ten seconds, otherwise +1 penalty throw. Play continues where the ball left the road.
 4. The team that reaches the finish with fewer throws wins. Tap to fast-forward a throw.
 

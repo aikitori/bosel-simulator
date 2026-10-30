@@ -98,3 +98,12 @@ describe('Abwurfzeitpunkt', () => {
     expect(throwAt(0.25)).toBeLessThan(ideal - 10);
   });
 });
+
+describe('Drall', () => {
+  it('Linksdrall zieht die rollende Kugel nach links', () => {
+    const c = buildCourse('breit', { lat: 53, lon: 7 }, { points: [{ x: 0, y: 0 }, { x: 0, y: 2000 }], halfWidth: [30], surface: ['asphalt'], roadside: ['ditch'] });
+    const plain = simulateThrow(c, { s: 0, d: 0 }, { yaw: 0, power: 0.8 }, 3);
+    const curl = simulateThrow(c, { s: 0, d: 0 }, { yaw: 0, power: 0.8, spin: 1 }, 3);
+    expect(curl.rest.d - plain.rest.d).toBeGreaterThan(2);
+  });
+});

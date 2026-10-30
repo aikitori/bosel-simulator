@@ -154,7 +154,7 @@ function home(): void {
   const ul = el('ul');
   for (const t of [
     'Finger aufs Bild: Anlauf. Im grünen Bereich zügig nach oben wischen und loslassen – der Moment bestimmt den Abwurfwinkel, das Tempo die Weite.',
-    'Schräg wischen lenkt die Kugel. In Kurven rollt sie geradeaus weiter – Vorsicht, Graben!',
+    'Schräg wischen lenkt die Kugel, ein gebogener Wisch gibt Drall. In Kurven rollt sie geradeaus weiter – Vorsicht, Graben!',
     'Landet die Kugel im Graben, geht es dort weiter, wo sie die Straße verlassen hat.',
     'Wer mit weniger Würfen ins Ziel kommt, gewinnt. Antippen spult den Wurf vor.',
   ])

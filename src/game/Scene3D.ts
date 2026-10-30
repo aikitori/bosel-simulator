@@ -19,6 +19,7 @@ type Mode = 'idle' | 'intro' | 'aim' | 'runup' | 'flight' | 'settle';
 const RUN = 0.85;
 const SWING = 0.34;
 const TRAIL = 50;
+const ARROW_STEPS = 24;
 /** Idealer Abwurf: Arm knapp hinter dem tiefsten Punkt (Sekunden ab Anlaufbeginn). */
 export const IDEAL_RELEASE = RUN + 0.78 * SWING;
 /** So lange darf man nach dem Schwung noch festhalten, dann fliegt die Kugel von selbst. */
@@ -234,10 +235,17 @@ export class Scene3D {
     this.thrower = new Thrower(assets);
     this.scene.add(this.thrower.root);
 
+    // Vorschau als Band, das sich mit dem Drall krümmt (Geometrie wird bei jeder Vorschau neu gesetzt)
+    const arrowGeo = new THREE.BufferGeometry();
+    arrowGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((ARROW_STEPS + 1) * 2 * 3), 3));
+    const idx: number[] = [];
+    for (let i = 0; i < ARROW_STEPS; i++) idx.push(2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 2, 2 * i + 1, 2 * i + 3);
+    arrowGeo.setIndex(idx);
     this.aimArrow = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.18, 1).rotateX(-Math.PI / 2).translate(0, 0.06, -0.5),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }),
+      arrowGeo,
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }),
     );
+    this.aimArrow.frustumCulled = false;
     this.aimArrow.visible = false;
     this.scene.add(this.aimArrow);
 
@@ -336,16 +344,30 @@ export class Scene3D {
   }
 
   /** Vorschaupfeil beim Wischen; `null` blendet ihn aus. */
-  preview(aim: { yaw: number; power: number } | null): void {
+  preview(aim: { yaw: number; power: number; spin?: number } | null): void {
     if (!aim) {
       this.aimArrow.visible = false;
       return;
     }
-    const dir = this.throwDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), aim.yaw);
+    const up = new THREE.Vector3(0, 1, 0);
+    const dir = this.throwDir.clone().applyAxisAngle(up, aim.yaw);
+    const length = 3 + launchSpeed(aim.power) * 1.2;
+    const step = length / ARROW_STEPS;
+    // Drall krümmt die Bahn sichtbar (leicht übertrieben, damit man es beim Zielen sieht)
+    const turn = (aim.spin ?? 0) * 0.012 * step;
+    const p = this.throwSpot.clone().setY(0.06);
+    const attr = this.aimArrow.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i <= ARROW_STEPS; i++) {
+      // zur Spitze hin schmaler
+      const w = 0.12 * (1 - (i / ARROW_STEPS) * 0.6);
+      const side = new THREE.Vector3().crossVectors(dir, up).multiplyScalar(w);
+      attr.setXYZ(2 * i, p.x - side.x, p.y, p.z - side.z);
+      attr.setXYZ(2 * i + 1, p.x + side.x, p.y, p.z + side.z);
+      p.addScaledVector(dir, step);
+      dir.applyAxisAngle(up, turn);
+    }
+    attr.needsUpdate = true;
     this.aimArrow.visible = true;
-    this.aimArrow.position.copy(this.throwSpot);
-    this.aimArrow.rotation.y = Math.atan2(-dir.x, -dir.z);
-    this.aimArrow.scale.set(1, 1, 3 + launchSpeed(aim.power) * 1.2);
     (this.aimArrow.material as THREE.MeshBasicMaterial).color.setHSL(0.33 - aim.power * 0.33, 0.9, 0.6);
   }
 

@@ -3,7 +3,7 @@ import type { ThrowInput } from './physics';
 /**
  * Wurf per Touch: Finger aufsetzen startet den Anlauf, im richtigen Moment nach oben schnippen
  * und loslassen. Tempo der Geste = Kraft, seitliche Abweichung = Richtung, Zeitpunkt des
- * Loslassens = Abwurfwinkel. Ausgewertet werden nur die letzten Millisekunden vor dem Loslassen.
+ * Loslassens = Abwurfwinkel, gebogener Strich = Drall. Ausgewertet werden nur die letzten Millisekunden vor dem Loslassen.
  */
 
 interface Sample {
@@ -20,6 +20,9 @@ const FULL_SPEED = 4.2;
 const MIN_SPEED = 0.5;
 const YAW_FACTOR = 0.45;
 const MAX_YAW = 0.6;
+/** Krümmung der Geste (Bogenmaß) für vollen Drall; kleinere Krümmungen sind Zittern. */
+const FULL_BEND = 0.6;
+const MIN_BEND = 0.08;
 
 /** Aufwärtstempo (Bildschirmhöhen/s) zwischen einem Punkt und dem Punkt ~WINDOW_MS davor. */
 function speedAt(samples: Sample[], j: number, screenHeight: number): number {
@@ -48,7 +51,24 @@ export function evaluate(samples: Sample[], screenHeight: number): ThrowInput | 
   const dy = last.y - samples[s].y;
   const power = Math.min(1, (up - MIN_SPEED) / (FULL_SPEED - MIN_SPEED));
   const yaw = dy < 0 ? Math.max(-MAX_YAW, Math.min(MAX_YAW, -Math.atan2(dx, -dy) * YAW_FACTOR)) : 0;
-  return { yaw, power };
+  return { yaw, power, spin: spinOf(samples.slice(s), screenHeight) };
+}
+
+/**
+ * Drall aus der Krümmung des Strichs: Richtung der ersten Hälfte gegen die der zweiten.
+ * Biegt die Geste nach rechts ab, zieht die Kugel nach rechts (negativer Drall).
+ */
+function spinOf(stroke: Sample[], screenHeight: number): number {
+  if (stroke.length < 5) return 0;
+  const a = stroke[0];
+  const m = stroke[Math.floor(stroke.length / 2)];
+  const b = stroke[stroke.length - 1];
+  if (Math.hypot(b.x - a.x, b.y - a.y) < screenHeight * 0.08) return 0;
+  const dir = (p: Sample, q: Sample) => Math.atan2(q.x - p.x, p.y - q.y); // 0 = nach oben, + = nach rechts
+  let bend = dir(m, b) - dir(a, m);
+  bend = Math.atan2(Math.sin(bend), Math.cos(bend));
+  if (Math.abs(bend) < MIN_BEND) return 0;
+  return Math.max(-1, Math.min(1, -(bend - Math.sign(bend) * MIN_BEND) / FULL_BEND));
 }
 
 export class SwipeInput {

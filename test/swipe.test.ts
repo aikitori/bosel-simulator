@@ -27,4 +27,17 @@ describe('Wischgeste', () => {
   it('langsames Schieben ist kein Wurf', () => {
     expect(evaluate(stroke(200, 800, 200, 780, 600), 900)).toBeNull();
   });
+
+  it('ein nach rechts gebogener Strich gibt Rechtsdrall', () => {
+    // erst gerade hoch, dann nach rechts abbiegen
+    const pts = [];
+    for (let i = 0; i <= 10; i++) pts.push({ x: 200, y: 800 - i * 20, t: i * 8 });
+    for (let i = 1; i <= 10; i++) pts.push({ x: 200 + i * 12, y: 600 - i * 16, t: 80 + i * 8 });
+    const r = evaluate(pts, 900)!;
+    expect(r.spin).toBeLessThan(-0.2);
+  });
+
+  it('ein gerader Strich hat keinen Drall', () => {
+    expect(evaluate(stroke(200, 800, 260, 450, 150), 900)!.spin).toBe(0);
+  });
 });
