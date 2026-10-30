@@ -27,6 +27,23 @@ import { labelTexture } from './textures';
 
 export const w3 = (p: Vec2, h = 0) => new THREE.Vector3(p.x, h, -p.y);
 
+/**
+ * Höhe der sichtbaren Oberfläche an einer Stelle (gewölbte Fahrbahn, Bordstein, Gehweg) – damit
+ * Kugel und Schatten darauf liegen statt darin zu stecken. Gräben (negativ) regelt die Physik selbst.
+ */
+export function surfaceHeight(course: Course, p: Vec2, hint?: number): { h: number; idx: number } {
+  const pr = project(course, p, hint);
+  const hw = course.halfWidth[pr.idx];
+  const ad = Math.abs(pr.d);
+  if (ad <= hw) return { h: 0.04 * (1 - ad / Math.max(hw, 0.1)), idx: pr.idx };
+  if (course.roadside[pr.idx] !== 'town') return { h: 0, idx: pr.idx };
+  const e = ad - hw;
+  if (e < 0.02) return { h: 0.12 * (e / 0.02), idx: pr.idx };
+  if (e <= WALK) return { h: 0.12, idx: pr.idx };
+  if (e <= WALK + 0.4) return { h: 0.12 - 0.08 * ((e - WALK) / 0.4), idx: pr.idx };
+  return { h: Math.max(0, 0.04 * (1 - (e - WALK - 0.4) / (VERGE + DITCH - WALK - 0.4))), idx: pr.idx };
+}
+
 const SURFACE_TEX: Record<Surface, { tex: TextureName; tile: number; tint: number }> = {
   asphalt: { tex: 'asphalt', tile: 4, tint: 0xd8d8d8 },
   paved: { tex: 'klinker', tile: 2, tint: 0xffffff },
@@ -47,6 +64,8 @@ const AREA_STYLE: Record<AreaKind, { tex: TextureName; tint: number; tile: numbe
 };
 
 const WATER = 0x4a6f80;
+/** Gehwegbreite im Ort (optisch; physikalisch zählt die Bankette `VERGE`). */
+const WALK = 1.2;
 const CHUNK = 160;
 const VISIBLE = 520;
 const SHADOW = 110;
@@ -305,10 +324,11 @@ export class World {
     const bank = new THREE.Color(0xc8dcb8);
     const water = new THREE.Color(0x5a8090);
     const grassMat = new THREE.MeshLambertMaterial({ map: this.tex('grass'), vertexColors: true, side: THREE.DoubleSide });
-    const curb = new THREE.Color(0x9a958c);
-    const walk = new THREE.Color(0xffffff);
+    // Gehweg im Ort: helle Bordsteinkante, grau gepflastert, dahinter Rasen
+    const curb = new THREE.Color(0xf2f0ea);
+    const walk = new THREE.Color(0xcfcac0);
     const lawn = new THREE.Color(0xf0f8e8);
-    const walkMat = new THREE.MeshLambertMaterial({ map: this.tex('klinker'), vertexColors: true, side: THREE.DoubleSide });
+    const walkMat = new THREE.MeshLambertMaterial({ map: this.tex('plaster'), vertexColors: true, side: THREE.DoubleSide });
     for (const run of this.runs(c.roadside)) {
       for (const side of [1, -1]) {
         const at = (i: number, o: number) => side * (c.halfWidth[i] + o);
@@ -336,12 +356,23 @@ export class World {
             (i) => [
               { d: at(i, 0), h: 0, c: curb },
               { d: at(i, 0.02), h: 0.12, c: curb },
-              { d: at(i, VERGE), h: 0.12, c: walk },
-              { d: at(i, VERGE + 0.4), h: 0.04, c: lawn },
+              { d: at(i, 0.16), h: 0.12, c: curb },
+              { d: at(i, 0.18), h: 0.12, c: walk },
+              { d: at(i, WALK), h: 0.12, c: walk },
+            ],
+            1.2,
+            walkMat,
+          );
+          this.ribbon(
+            run.from,
+            run.to,
+            (i) => [
+              { d: at(i, WALK), h: 0.12, c: lawn },
+              { d: at(i, WALK + 0.4), h: 0.04, c: lawn },
               { d: at(i, VERGE + DITCH), h: 0, c: lawn },
             ],
-            1.5,
-            walkMat,
+            2.5,
+            grassMat,
           );
         }
       }

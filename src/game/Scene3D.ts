@@ -6,7 +6,7 @@ import type { Assets } from './assets';
 import type { Obstacle, ObstacleKind } from './obstacles';
 import { buzz, sound } from './audio';
 import { BALL_RADIUS, launchSpeed, type ThrowResult } from './physics';
-import { w3, World } from './world';
+import { surfaceHeight, w3, World } from './world';
 
 /**
  * Die 3D-Ansicht: Landschaft (`World`), zwei Kugeln und die werfende Figur (Quaternius,
@@ -244,9 +244,11 @@ export class Scene3D {
     arrowGeo.setIndex(idx);
     this.aimArrow = new THREE.Mesh(
       arrowGeo,
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }),
+      // immer sichtbar, auch wo die Bahn über Bordstein oder Gehweg läuft
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, depthTest: false, side: THREE.DoubleSide }),
     );
     this.aimArrow.frustumCulled = false;
+    this.aimArrow.renderOrder = 10;
     this.aimArrow.visible = false;
     this.scene.add(this.aimArrow);
 
@@ -288,7 +290,16 @@ export class Scene3D {
   }
 
   setBall(team: number, rest: { s: number; d: number }): void {
-    this.balls[team].position.copy(this.spotOf(rest)).setY(BALL_RADIUS);
+    const p = this.spotOf(rest);
+    this.balls[team].position.copy(p).setY(this.groundAt(p.x, -p.z) + BALL_RADIUS);
+  }
+
+  private groundHint = 0;
+
+  private groundAt(x: number, y: number): number {
+    const g = surfaceHeight(this.course, { x, y }, this.groundHint);
+    this.groundHint = g.idx;
+    return g.h;
   }
 
   hideBall(team: number, hidden: boolean): void {
@@ -521,7 +532,12 @@ export class Scene3D {
       const k = fi - i0;
       const ball = this.balls[this.activeBall];
       const prev = ball.position.clone();
-      ball.position.set(a.x + (b.x - a.x) * k, a.z + (b.z - a.z) * k + BALL_RADIUS, -(a.y + (b.y - a.y) * k));
+      const bx = a.x + (b.x - a.x) * k;
+      const by = a.y + (b.y - a.y) * k;
+      const bz = a.z + (b.z - a.z) * k;
+      // auf der Oberfläche liegen (Gehweg, Wölbung) – im Graben senkt die Physik selbst ab
+      const ground = bz >= -0.01 ? this.groundAt(bx, by) : 0;
+      ball.position.set(bx, bz + ground + BALL_RADIUS, -by);
       // Rollen: Drehung um die Achse quer zur Bewegung, Winkel = Weg / Radius
       const move = ball.position.clone().sub(prev).setY(0);
       const len = move.length();
@@ -549,7 +565,7 @@ export class Scene3D {
       this.placeFigure(this.figureBack * (1 - f), this.figureCrouch * (1 - f), this.figureLean * (1 - f));
       t.update(dt);
       if (after < 0.6) t.swingArm(this.armAngle + (-1.2 - this.armAngle) * f);
-      this.chase(ball.position, dt);
+      this.chase(ball.position, dt, this.mode === 'settle' ? 0 : Math.hypot(b.x - a.x, b.y - a.y) * 60);
       if (fi >= r.frames.length - 1) {
         if (this.mode === 'flight') {
           this.mode = 'settle';
@@ -639,9 +655,14 @@ export class Scene3D {
     this.camLook.copy(this.throwSpot).addScaledVector(this.throwDir, 30).setY(0.3);
   }
 
-  private chase(ball: THREE.Vector3, dt: number): void {
-    const target = ball.clone().addScaledVector(this.chaseDir, -6.5);
-    target.y = Math.max(ball.y, 0) + 2.3;
+  /**
+   * Verfolgerkamera: bei schneller Kugel weiter weg und höher, beim Ausrollen näher und tiefer,
+   * damit man sieht, wo genau sie liegt.
+   */
+  private chase(ball: THREE.Vector3, dt: number, speed: number): void {
+    const f = Math.min(1, speed / 8);
+    const target = ball.clone().addScaledVector(this.chaseDir, -(2.6 + 3.9 * f));
+    target.y = Math.max(ball.y, 0) + 1.0 + 1.3 * f;
     const k = 1 - Math.exp(-dt * 3.5 * this.speed);
     this.camera.position.lerp(target, k);
     const look = ball.clone().addScaledVector(this.chaseDir, 4);
@@ -660,8 +681,9 @@ export class Scene3D {
       marker.scale.setScalar(s);
       marker.position.set(ball.position.x, ball.position.y + 0.4 + s * 0.6 + Math.sin(this.time * 3 + i) * 0.1 * s, ball.position.z);
       blob.visible = ball.visible && ball.position.y > -0.1 && !held;
-      blob.position.set(ball.position.x, 0.05, ball.position.z);
-      const lift = Math.max(0, ball.position.y - BALL_RADIUS);
+      const ground = this.groundAt(ball.position.x, -ball.position.z);
+      blob.position.set(ball.position.x, ground + 0.015, ball.position.z);
+      const lift = Math.max(0, ball.position.y - BALL_RADIUS - ground);
       (blob.material as THREE.MeshBasicMaterial).opacity = Math.max(0.05, 0.35 - lift * 0.25);
     });
   }
