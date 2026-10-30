@@ -3,6 +3,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import { headingAt, pointAt, type Course } from '../osm/course';
 import type { Assets } from './assets';
 import type { Obstacle, ObstacleKind } from './obstacles';
+import { buzz, sound } from './audio';
 import { BALL_RADIUS, launchSpeed, type ThrowResult } from './physics';
 import { w3, World } from './world';
 
@@ -13,9 +14,10 @@ import { w3, World } from './world';
 
 const SKY = 0xb4d3ec;
 
-type Mode = 'idle' | 'aim' | 'runup' | 'flight' | 'settle';
+type Mode = 'idle' | 'intro' | 'aim' | 'runup' | 'flight' | 'settle';
 
 const RUN = 0.95;
+const TRAIL = 50;
 const SWING = 0.34;
 
 export class Thrower {
@@ -97,6 +99,25 @@ export class Thrower {
   }
 }
 
+/** Geräusche und Vibrationen eines Wurfs, zeitlich an die Bildfolge gebunden. */
+function soundEvents(r: ThrowResult): { frame: number; play: () => void }[] {
+  const out: { frame: number; play: () => void }[] = [];
+  const f = r.frames;
+  for (let i = 1; i < f.length; i++) {
+    const vz = (f[i - 1].z - f[i].z) * 60;
+    if (f[i].z <= 0.001 && f[i - 1].z > 0.001 && vz > 0.3) {
+      out.push({ frame: i, play: () => (sound.bounce(vz / 4), buzz(Math.min(25, 5 + vz * 4))) });
+    }
+  }
+  for (const h of r.hits) {
+    const play =
+      h.kind === 'puddle' ? () => (sound.splash(), buzz(30)) : h.kind === 'stone' ? () => (sound.clack(), buzz(40)) : () => (sound.bounce(1), buzz(50));
+    out.push({ frame: h.frame, play });
+  }
+  if (r.outcome === 'ditch') out.push({ frame: f.length - 12, play: () => (sound.splash(), buzz(120)) });
+  return out.sort((a, b) => a.frame - b.frame);
+}
+
 export class Scene3D {
   readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
@@ -128,6 +149,13 @@ export class Scene3D {
   private readonly particles: { mesh: THREE.Mesh; v: THREE.Vector3; life: number }[] = [];
   private readonly particleGeo = new THREE.SphereGeometry(0.03, 5, 4);
   private nextHit = 0;
+  private nextSound = 0;
+  private throwPower = 0;
+  private sounds: { frame: number; play: () => void }[] = [];
+  private readonly trail: THREE.Line;
+  private readonly trailPoints: THREE.Vector3[] = [];
+  private onIntroDone: (() => void) | null = null;
+  private perf = { frames: 0, time: 0, done: false };
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -188,12 +216,21 @@ export class Scene3D {
     this.aimArrow.visible = false;
     this.scene.add(this.aimArrow);
 
+    // Flugspur hinter der Kugel
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(TRAIL * 3), 3));
+    this.trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 }));
+    this.trail.frustumCulled = false;
+    this.trail.visible = false;
+    this.scene.add(this.trail);
+
     this.resize();
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
   dispose(): void {
     this.disposed = true;
+    sound.rolling(0);
     this.renderer.setAnimationLoop(null);
     // Geteilte Modelle und Texturen (Assets) bleiben für die nächste Partie erhalten
     this.renderer.dispose();
@@ -288,8 +325,9 @@ export class Scene3D {
   }
 
   /** Anlauf, Wurf und Kugelflug abspielen. */
-  playThrow(result: ThrowResult, onDone: () => void): void {
+  playThrow(result: ThrowResult, power: number, onDone: () => void): void {
     this.result = result;
+    this.throwPower = power;
     this.onThrowDone = onDone;
     this.mode = 'runup';
     this.time = 0;
@@ -298,10 +336,43 @@ export class Scene3D {
     this.nextHit = 0;
     this.aimArrow.visible = false;
     this.thrower.play('run', 0.12);
+    this.trailPoints.length = 0;
+    this.sounds = soundEvents(result);
+    this.nextSound = 0;
+  }
+
+  /** Streckenflug zum Start: von oben die ganze Strecke entlang, Antippen überspringt. */
+  intro(onDone: () => void): void {
+    this.mode = 'intro';
+    this.time = 0;
+    this.onIntroDone = onDone;
+  }
+
+  private flyover(): void {
+    const c = this.course;
+    const duration = Math.max(4, Math.min(9, c.length / 350));
+    const k = Math.min(1, this.time / duration);
+    const e = k * k * (3 - 2 * k);
+    const s = e * c.length;
+    const p = w3(pointAt(c, s).p);
+    const dir = headingAt(c, s, 60);
+    const d3 = new THREE.Vector3(dir.x, 0, -dir.y);
+    this.camera.position.copy(p).addScaledVector(d3, -70).setY(55 - 25 * e);
+    this.camLook.copy(w3(pointAt(c, Math.min(c.length, s + 120)).p));
+    if (k >= 1) this.endIntro();
+  }
+
+  private endIntro(): void {
+    if (this.mode !== 'intro') return;
+    this.mode = 'idle';
+    const done = this.onIntroDone;
+    this.onIntroDone = null;
+    done?.();
   }
 
   /** Antippen während des Flugs: schneller vorspulen. */
   fastForward(): void {
+    if (this.mode === 'intro') this.endIntro();
     if (this.mode === 'flight' || this.mode === 'settle') this.speed = 4;
   }
 
@@ -322,7 +393,11 @@ export class Scene3D {
     this.time += dt;
     const t = this.thrower;
 
-    if (this.mode === 'aim') {
+    if (this.mode === 'intro') {
+      t.update(dt);
+      this.flyover();
+    } else if (this.mode === 'aim') {
+      this.adaptQuality(dt);
       this.placeFigure(-4, 0, 0);
       t.update(dt);
       this.overShoulder();
@@ -345,6 +420,7 @@ export class Scene3D {
           this.flightTime = 0;
           this.ballInHand = false;
           this.chaseDir.copy(this.throwDir);
+          sound.whoosh(this.throwPower);
         }
       }
       this.overShoulder();
@@ -360,6 +436,11 @@ export class Scene3D {
       const ball = this.balls[this.activeBall];
       ball.position.set(a.x + (b.x - a.x) * k, a.z + (b.z - a.z) * k + BALL_RADIUS, -(a.y + (b.y - a.y) * k));
       while (this.nextHit < r.hits.length && r.hits[this.nextHit].frame <= fi) this.burst(ball.position, r.hits[this.nextHit++].kind);
+      while (this.nextSound < this.sounds.length && this.sounds[this.nextSound].frame <= fi) this.sounds[this.nextSound++].play();
+      // Rollgeräusch nach Tempo, nur am Boden
+      const v = Math.hypot(b.x - a.x, b.y - a.y) * 60;
+      sound.rolling(a.z < 0.01 && this.mode === 'flight' ? v : 0);
+      this.updateTrail(ball.position);
       const vel = new THREE.Vector3(b.x - a.x, 0, -(b.y - a.y));
       if (vel.lengthSq() > 1e-6) this.chaseDir.lerp(vel.normalize(), 1 - Math.exp(-dt * 4)).normalize();
       // Figur bleibt kurz in der Abwurfhaltung, dann steht sie auf
@@ -373,10 +454,12 @@ export class Scene3D {
         if (this.mode === 'flight') {
           this.mode = 'settle';
           this.settleTime = 0;
+          sound.rolling(0);
         }
         this.settleTime += dt * this.speed;
         if (this.settleTime > 1.3) {
           this.mode = 'idle';
+          this.trail.visible = false;
           const done = this.onThrowDone;
           this.onThrowDone = null;
           done?.();
@@ -400,6 +483,36 @@ export class Scene3D {
     this.sun.position.copy(this.camLook).add(new THREE.Vector3(50, 90, 35));
     this.camera.lookAt(this.camLook);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private updateTrail(at: THREE.Vector3): void {
+    const last = this.trailPoints[this.trailPoints.length - 1];
+    if (!last || last.distanceToSquared(at) > 0.04) this.trailPoints.push(at.clone());
+    if (this.trailPoints.length > TRAIL) this.trailPoints.shift();
+    const attr = this.trail.geometry.attributes.position as THREE.BufferAttribute;
+    this.trailPoints.forEach((p, i) => attr.setXYZ(i, p.x, p.y, p.z));
+    attr.needsUpdate = true;
+    this.trail.geometry.setDrawRange(0, this.trailPoints.length);
+    this.trail.visible = this.trailPoints.length > 1;
+  }
+
+  /**
+   * Läuft es zu langsam (schwaches Handy), einmalig die Auflösung und die Schattenkarte
+   * verkleinern. Gemessen wird in den ersten Sekunden des Zielens.
+   */
+  private adaptQuality(dt: number): void {
+    const p = this.perf;
+    if (p.done) return;
+    p.frames++;
+    p.time += dt;
+    if (p.frames < 90) return;
+    p.done = true;
+    if (p.time / p.frames < 1 / 38) return;
+    this.renderer.setPixelRatio(1);
+    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
+    this.resize();
   }
 
   /** Blick über die linke Schulter, damit der Wurfarm rechts im Bild bleibt. */

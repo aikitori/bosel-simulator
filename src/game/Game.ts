@@ -4,6 +4,7 @@ import { OBSTACLE_NAME, placeObstacles, type Obstacle } from './obstacles';
 import { simulateThrow, type Outcome, type ThrowInput } from './physics';
 import { addPenalty, currentPlayer, isOver, newMatch, recordThrow, winner, type Match, type Order, type TeamSetup } from './rules';
 import type { Assets } from './assets';
+import { sound } from './audio';
 import { kescher } from './Kescher';
 import { Scene3D } from './Scene3D';
 import { SwipeInput } from './SwipeInput';
@@ -99,7 +100,12 @@ export class Game {
       w.boselKescher = () => kescher(this.root, teams[0].color);
     }
     this.updateHud();
-    this.nextTurn();
+    canvas.addEventListener('pointerdown', () => sound.unlock());
+    this.turnLabel.innerHTML = '';
+    this.turnLabel.append(course.name, el('small', '', ' · antippen zum Starten'));
+    this.drawMinimap();
+    this.turnLabel.classList.add('show');
+    this.scene.intro(() => this.nextTurn());
   }
 
   dispose(): void {
@@ -132,7 +138,7 @@ export class Game {
     this.turnLabel.classList.remove('show');
     this.hint.classList.remove('show');
     const result = simulateThrow(this.course, t, input, (Math.random() * 2 ** 31) | 0, this.obstacles);
-    this.scene.playThrow(result, () => {
+    this.scene.playThrow(result, input.power, () => {
       recordThrow(m, result.rest, result.gained, result.outcome);
       this.scene.setBall(team, result.rest);
       this.scene.hideBall(team, false);
@@ -146,6 +152,7 @@ export class Game {
         if (isOver(m)) setTimeout(() => this.showResult(), 1800);
         else setTimeout(() => this.nextTurn(), 1500);
       };
+      if (result.outcome === 'finish') sound.fanfare();
       if (result.outcome !== 'ditch') return next();
       // Kugel im Graben: rausfischen oder Strafwurf
       setTimeout(async () => {
@@ -239,11 +246,16 @@ export class Game {
     box.append(el('h2', '', 'Pause'));
     const resume = el('button', 'btn primary', 'Weiterspielen');
     resume.addEventListener('click', () => o.remove());
+    const mute = el('button', 'btn', sound.enabled ? 'Ton aus' : 'Ton an');
+    mute.addEventListener('click', () => {
+      sound.setEnabled(!sound.enabled);
+      mute.textContent = sound.enabled ? 'Ton aus' : 'Ton an';
+    });
     const restart = el('button', 'btn', 'Neu starten');
     restart.addEventListener('click', () => this.end.rematch());
     const quit = el('button', 'btn', 'Zum Hauptmenü');
     quit.addEventListener('click', () => this.end.menu());
-    box.append(resume, restart, quit);
+    box.append(resume, mute, restart, quit);
     o.append(box);
   }
 

@@ -21,6 +21,7 @@
 - **Physics:** the ball bounces, rolls, drifts to the road edge and runs straight on in bends – right into the ditch.
 - **Random obstacles:** potholes knock the ball off course, puddles slow it down, stones deflect it.
 - **Kloot in de Sloot:** if the ball lands in the ditch, fish it out with the net in a mini-game – or take a penalty throw.
+- **Feel:** synthesized sound (throw, bounces, rolling, splash), vibration, ball trail, fly-over of the course before each match.
 - **Two teams on one device:** take turns or play the traditional way (whoever is behind throws). Optional player names per team.
 - **Offline practice course** and saved routes.
 

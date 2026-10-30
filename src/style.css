@@ -307,6 +307,9 @@ footer {
 }
 .turn-label {
   top: 96px;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: rgb(0 0 0 / 0.55);
   color: #fff;
   font-size: 1.15rem;

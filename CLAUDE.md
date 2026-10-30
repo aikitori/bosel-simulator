@@ -10,7 +10,7 @@ Boßeln auf echten Straßen: Strecke aus OpenStreetMap wählen, zwei Teams werfe
 
 ## Konventionen
 - Strecken-Koordinaten in Metern: x = Osten, y = Norden (`src/geo.ts`). In Three.js wird daraus
-  (x, Höhe, −y) – immer über `w3()` in `Scene3D.ts`.
+  (x, Höhe, −y) – immer über `w3()` in `world.ts`.
 - `Course` (`src/osm/course.ts`) ist alle `STEP` = 2 m abgetastet; Position auf der Strecke als
   `s` (Weg) und `d` (seitlich, positiv = links). `project()` mit `hint` suchen lassen.
 - Physik (`src/game/physics.ts`) ist rein und deterministisch (Seed) – Änderungen mit Tests absichern.
@@ -22,6 +22,7 @@ Boßeln auf echten Straßen: Strecke aus OpenStreetMap wählen, zwei Teams werfe
   Knochennamen (`UpperArm.R` → `UpperArmR`). Bäume/Tiere sind InstancedMeshes in 160-m-Kacheln (Sichtweite).
 - Flächen am Boden schreiben keine Tiefe und werden per `renderOrder` zuerst gezeichnet – sonst
   verschwinden die tiefer liegenden Gräben.
+- Ton wird in `src/game/audio.ts` per WebAudio erzeugt (keine Dateien), erst nach Berührung (`sound.unlock()`).
 - Hindernisse (`src/game/obstacles.ts`) werden je Partie zufällig verteilt und an `simulateThrow` übergeben.
 - Im Dev-Modus löst `window.boselThrow({ yaw, power })` einen Wurf aus (für Browser-Tests;
   Headless-Chromium rendert zu langsam für echte Wischgesten), `window.boselKescher()` startet das
