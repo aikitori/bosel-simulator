@@ -183,7 +183,8 @@ footer {
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: max(12px, env(safe-area-inset-bottom));
+  /* Platz für die OSM-Quellenangabe darunter */
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 22px);
   z-index: 1000;
   background: #fff;
   border-radius: var(--radius);
@@ -509,4 +510,26 @@ footer {
   border-radius: 2px;
   background: #fff;
   box-shadow: 0 0 4px rgb(0 0 0 / 0.6);
+}
+
+.picker-status.busy::before {
+  content: '';
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 0.5em;
+  vertical-align: -0.1em;
+  border: 2px solid var(--accent);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.picker .leaflet-control-attribution {
+  margin-bottom: max(2px, env(safe-area-inset-bottom));
 }

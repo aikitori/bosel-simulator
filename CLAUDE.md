@@ -14,6 +14,9 @@ Boßeln auf echten Straßen: Strecke aus OpenStreetMap wählen, zwei Teams werfe
 - `Course` (`src/osm/course.ts`) ist alle `STEP` = 2 m abgetastet; Position auf der Strecke als
   `s` (Weg) und `d` (seitlich, positiv = links). `project()` mit `hint` suchen lassen.
 - Physik (`src/game/physics.ts`) ist rein und deterministisch (Seed) – Änderungen mit Tests absichern.
+- Route kommt von OSRM (FOSSGIS, Fahrrad-Profil, `src/osm/osrm.ts`); Overpass wird nur einmal beim
+  „Spielen“ für einen schmalen Streifen entlang der Route gefragt (Belag/Breite + Kulisse). Fällt OSRM
+  aus, wird wie früher über Overpass-Straßen geroutet. Keine `.ru`-Server verwenden.
 - Overpass/Nominatim brauchen eine Browser-Kennung; `curl` ohne `-A` bekommt 406.
 - Kulisse aus OSM: `src/osm/scenery.ts` (Parser) → `Course.trees/areas/hedges/waterways/buildings`,
   aufgebaut in `src/game/world.ts`. Alle Kulissen-Felder außer `buildings`/`water` sind optional

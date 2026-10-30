@@ -2,9 +2,10 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LatLon } from '../geo';
 import type { Course } from '../osm/course';
-import { bboxAround, fetchRoads, fetchScenery, type BBox } from '../osm/overpass';
+import { bboxAround, fetchRoads, fetchScenery, type BBox, type LoadState } from '../osm/overpass';
+import { routeOsrm } from '../osm/osrm';
 import { buildGraph, courseFromRoute, route, type RoadGraph, type RoutedLine } from '../osm/routing';
-import { haversine } from '../geo';
+import { haversine, Projection, simplify } from '../geo';
 
 /**
  * Strecke auf der OSM-Karte wählen: Start und Ziel antippen (weitere Punkte = Umweg über
@@ -89,13 +90,47 @@ export class MapPicker {
 
   dispose(): void {
     this.abort?.abort();
+    this.stopProgress();
     this.map.remove();
     this.root.remove();
   }
 
-  private setStatus(text: string, error = false): void {
+  private ticker: ReturnType<typeof setInterval> | undefined;
+
+  private setStatus(text: string, error = false, busy = false): void {
+    if (!busy) this.stopProgress();
     this.status.textContent = text;
     this.status.classList.toggle('error', error);
+    this.status.classList.toggle('busy', busy);
+  }
+
+  /**
+   * Laufende Anzeige während einer Overpass-Abfrage: Schritt, Sekunden, Server und
+   * empfangene Datenmenge. Liefert den Fortschritts-Callback für die Abfrage.
+   */
+  private progress(step: string): (s: LoadState) => void {
+    this.stopProgress();
+    const started = performance.now();
+    let state: LoadState | null = null;
+    const render = () => {
+      const sec = Math.round((performance.now() - started) / 1000);
+      let detail = '';
+      if (state && state.bytes > 0) detail = ` · ${(state.bytes / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB empfangen`;
+      else if (state) detail = state.server > 1 ? ` · Ausweichserver ${state.server - 1} von ${state.servers - 1}` : ' · Server rechnet';
+      if (sec >= 20 && (!state || state.bytes === 0)) detail += ' – Overpass ist gerade stark ausgelastet';
+      this.setStatus(`${step} ${sec} s${detail}`, false, true);
+    };
+    render();
+    this.ticker = setInterval(render, 500);
+    return (s) => {
+      state = s;
+      render();
+    };
+  }
+
+  private stopProgress(): void {
+    clearInterval(this.ticker);
+    this.ticker = undefined;
   }
 
   private async search(q: string): Promise<void> {
@@ -156,7 +191,7 @@ export class MapPicker {
       this.setStatus(pts.length ? 'Jetzt das Ziel antippen.' : 'Tippe auf eine Straße für den Start, dann fürs Ziel.');
       return;
     }
-    const need = bboxAround(pts, 400);
+    const need = bboxAround(pts, 250);
     const span = Math.max(
       haversine({ lat: need.south, lon: need.west }, { lat: need.north, lon: need.west }),
       haversine({ lat: need.south, lon: need.west }, { lat: need.south, lon: need.east }),
@@ -166,13 +201,7 @@ export class MapPicker {
     const abort = new AbortController();
     this.abort = abort;
     try {
-      if (!this.graph || !contains(this.graph.bbox, need)) {
-        this.setStatus('Lade Straßen aus OpenStreetMap …');
-        const bbox = bboxAround(pts, 1000);
-        const ways = await fetchRoads(bbox, abort.signal);
-        this.graph = { bbox, g: buildGraph(ways) };
-      }
-      const r = route(this.graph.g, pts);
+      const r = await this.findRoute(pts, need, abort.signal);
       if ('error' in r) return this.setStatus(r.error, true);
       this.routed = r;
       this.routeLine = L.polyline(
@@ -191,21 +220,54 @@ export class MapPicker {
     }
   }
 
+  /**
+   * Route suchen: zuerst über OSRM (schnell, keine großen Datenmengen); nur wenn das nicht
+   * klappt, Straßen über Overpass laden und selbst routen.
+   */
+  private async findRoute(pts: LatLon[], need: BBox, signal: AbortSignal): Promise<RoutedLine | { error: string }> {
+    this.setStatus('Suche Route …', false, true);
+    try {
+      return await routeOsrm(pts, signal);
+    } catch (e) {
+      if (signal.aborted) throw e;
+      console.warn('OSRM nicht erreichbar, weiche auf Overpass aus', e);
+    }
+    if (!this.graph || !contains(this.graph.bbox, need)) {
+      const bbox = bboxAround(pts, 500);
+      const ways = await fetchRoads(bbox, signal, this.progress('Routendienst nicht erreichbar – lade Straßen aus OpenStreetMap …'));
+      this.setStatus(`${ways.length} Straßenstücke geladen – berechne Route …`, false, true);
+      await new Promise((r) => setTimeout(r, 0)); // Anzeige erst zeichnen lassen
+      this.graph = { bbox, g: buildGraph(ways) };
+    }
+    return route(this.graph.g, pts);
+  }
+
   private async finish(): Promise<void> {
     const r = this.routed;
     if (!r) return;
     this.playBtn.disabled = true;
-    this.setStatus('Lade Häuser und Gewässer …');
-    // Linie für die Umkreissuche ausdünnen
-    const line = [r.line[0]];
-    for (const p of r.line) if (haversine(line[line.length - 1], p) > 60) line.push(p);
-    line.push(r.line[r.line.length - 1]);
+    const onProgress = this.progress('Lade Straßenbelag, Häuser und Bäume entlang der Route …');
+    // Linie für die Umkreissuche vereinfachen – genau genug für einen 12-m-Streifen
+    const proj = new Projection(r.line[0]);
+    let line = simplify(r.line, (p) => proj.toLocal(p), 3);
+    for (let tol = 6; line.length > 300; tol *= 2) line = simplify(r.line, (p) => proj.toLocal(p), tol);
+    let sceneryFailed = false;
     const [scenery, place] = await Promise.all([
-      fetchScenery(line.slice(0, 250), 150).catch(() => []),
+      fetchScenery(line, 120, AbortSignal.timeout(30000), onProgress).catch(() => {
+        // ohne Kulisse spielbar, nur kahler
+        sceneryFailed = true;
+        return [];
+      }),
       this.placeName ? Promise.resolve(this.placeName) : reverseName(r.line[0]),
     ]);
+    this.setStatus('Baue die Landschaft …', false, true);
+    await new Promise((res) => setTimeout(res, 0));
     const km = (r.length / 1000).toLocaleString('de-DE', { maximumFractionDigits: 1 });
     const course = courseFromRoute(`${place || 'Eigene Strecke'} (${km} km)`, r, scenery);
+    if (sceneryFailed) {
+      this.setStatus('OpenStreetMap-Server überlastet – Strecke ohne Häuser und Bäume.', true);
+      await new Promise((res) => setTimeout(res, 2500));
+    }
     this.onDone(course);
   }
 }

@@ -169,6 +169,8 @@ export class Game {
   /** Finger los (oder zu lange gehalten): jetzt wird geworfen – oder abgebrochen. */
   private onRelease(input: ThrowInput | null): void {
     const timing = this.scene.releaseTiming();
+    // Kein gültiges Wischen beim Loslassen, aber vorher gezielt: dann gilt der gezeigte Pfeil
+    input ??= this.lastAim;
     this.timingBar.classList.remove('show');
     if (timing === null) return;
     // Losgelassen, bevor überhaupt ausgeholt wurde und ohne Wischen: zurück an den Start

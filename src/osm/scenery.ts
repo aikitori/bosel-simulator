@@ -226,6 +226,7 @@ export function parseScenery(elements: OsmElement[], proj: Projection, centerlin
       continue;
     }
 
+    if (tags.highway) continue; // Straßen liefern nur Belag und Breite (routing.ts)
     if (tags.building) {
       const fp = ring(proj, e.geometry);
       if (fp.length >= 3 && route.distance(fp[0]) < RANGE) scenery.buildings.push(building(tags, fp, rand));

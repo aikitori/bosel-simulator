@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { headingAt, pointAt, type Course } from '../osm/course';
+import { headingAt, pointAt, project, type Course } from '../osm/course';
 import type { Assets } from './assets';
 import type { Obstacle, ObstacleKind } from './obstacles';
 import { buzz, sound } from './audio';
@@ -390,6 +390,7 @@ export class Scene3D {
     this.aimArrow.visible = false;
     this.ballInHand = false;
     this.chaseDir.copy(this.throwDir);
+    this.ballHint = project(this.course, { x: this.throwSpot.x, y: -this.throwSpot.z }).idx;
     this.trailPoints.length = 0;
     this.sounds = soundEvents(result);
     this.nextSound = 0;
@@ -508,7 +509,12 @@ export class Scene3D {
       sound.rolling(a.z < 0.01 && this.mode === 'flight' ? v : 0);
       this.updateTrail(ball.position);
       const vel = new THREE.Vector3(b.x - a.x, 0, -(b.y - a.y));
-      if (vel.lengthSq() > 1e-6) this.chaseDir.lerp(vel.normalize(), 1 - Math.exp(-dt * 4)).normalize();
+      if (vel.lengthSq() > 1e-6) {
+        // Kamera halb in Flug-, halb in Straßenrichtung: so sieht man, wenn die Kugel schräg läuft
+        const h = headingAt(this.course, this.ballS(ball.position), 10);
+        const target = vel.normalize().add(new THREE.Vector3(h.x, 0, -h.y)).normalize();
+        this.chaseDir.lerp(target, 1 - Math.exp(-dt * 2.5)).normalize();
+      }
       // Figur schwingt aus der Abwurfhaltung nach und richtet sich auf
       const after = this.flightTime / this.speed;
       const f = Math.min(1, after / 0.6);
@@ -550,6 +556,15 @@ export class Scene3D {
     this.sun.position.copy(this.camLook).add(new THREE.Vector3(50, 90, 35));
     this.camera.lookAt(this.camLook);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private ballHint = 0;
+
+  /** Weg entlang der Strecke an einer Weltposition (für die Kamera). */
+  private ballS(p: THREE.Vector3): number {
+    const pr = project(this.course, { x: p.x, y: -p.z }, this.ballHint);
+    this.ballHint = pr.idx;
+    return pr.s;
   }
 
   private setPose(back: number, crouch: number, lean: number, arm: number | null): void {

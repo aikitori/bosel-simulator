@@ -13,27 +13,41 @@ interface Sample {
 }
 
 const WINDOW_MS = 110;
+/** Wie lange vor dem Loslassen der schnellste Moment der Geste noch zählt. */
+const RECENT_MS = 300;
 /** Bildschirmhöhen pro Sekunde für volle Kraft. */
 const FULL_SPEED = 4.2;
 const MIN_SPEED = 0.5;
-const YAW_FACTOR = 0.32;
+const YAW_FACTOR = 0.45;
 const MAX_YAW = 0.6;
 
+/** Aufwärtstempo (Bildschirmhöhen/s) zwischen einem Punkt und dem Punkt ~WINDOW_MS davor. */
+function speedAt(samples: Sample[], j: number, screenHeight: number): number {
+  let i = j;
+  while (i > 0 && samples[j].t - samples[i].t < WINDOW_MS) i--;
+  const dt = Math.max(1, samples[j].t - samples[i].t);
+  return ((samples[i].y - samples[j].y) / dt) * (1000 / screenHeight);
+}
+
+/**
+ * Kraft = schnellster Moment der Aufwärtsbewegung kurz vor dem Loslassen (ein kurzes Innehalten
+ * vor dem Abheben kostet also nichts). Richtung = der ganze Aufwärtsstrich vom tiefsten Punkt
+ * bis zum Loslassen – genau das, was der Vorschaupfeil zeigt.
+ */
 export function evaluate(samples: Sample[], screenHeight: number): ThrowInput | null {
   if (samples.length < 2) return null;
-  const last = samples[samples.length - 1];
-  let first = samples[samples.length - 2];
-  for (let i = samples.length - 2; i >= 0; i--) {
-    first = samples[i];
-    if (last.t - samples[i].t >= WINDOW_MS) break;
-  }
-  const dt = Math.max(1, last.t - first.t);
-  const vx = (last.x - first.x) / dt;
-  const vy = (last.y - first.y) / dt;
-  const up = (-vy * 1000) / screenHeight;
+  const n = samples.length;
+  const last = samples[n - 1];
+  let up = 0;
+  for (let j = n - 1; j > 0 && last.t - samples[j].t <= RECENT_MS; j--) up = Math.max(up, speedAt(samples, j, screenHeight));
   if (up < MIN_SPEED) return null;
+  // Anfang des Aufwärtsstrichs: so weit zurück, wie der Finger nach oben (oder kaum nach unten) lief
+  let s = n - 1;
+  while (s > 0 && samples[s - 1].y >= samples[s].y - 3) s--;
+  const dx = last.x - samples[s].x;
+  const dy = last.y - samples[s].y;
   const power = Math.min(1, (up - MIN_SPEED) / (FULL_SPEED - MIN_SPEED));
-  const yaw = Math.max(-MAX_YAW, Math.min(MAX_YAW, -Math.atan2(vx, -vy) * YAW_FACTOR));
+  const yaw = dy < 0 ? Math.max(-MAX_YAW, Math.min(MAX_YAW, -Math.atan2(dx, -dy) * YAW_FACTOR)) : 0;
   return { yaw, power };
 }
 

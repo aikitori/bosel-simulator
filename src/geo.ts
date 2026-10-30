@@ -55,3 +55,34 @@ export function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
   }
   return inside;
 }
+
+/** Linie vereinfachen (Douglas-Peucker), Toleranz in Metern. */
+export function simplify<T>(pts: T[], toLocal: (p: T) => Vec2, tolerance: number): T[] {
+  if (pts.length < 3) return pts.slice();
+  const loc = pts.map(toLocal);
+  const keep = new Uint8Array(pts.length);
+  keep[0] = keep[pts.length - 1] = 1;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [i, j] = stack.pop()!;
+    const a = loc[i];
+    const b = loc[j];
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const l = Math.hypot(ex, ey) || 1;
+    let worst = -1;
+    let worstD = tolerance;
+    for (let k = i + 1; k < j; k++) {
+      const d = Math.abs(ex * (loc[k].y - a.y) - ey * (loc[k].x - a.x)) / l;
+      if (d > worstD) {
+        worstD = d;
+        worst = k;
+      }
+    }
+    if (worst >= 0) {
+      keep[worst] = 1;
+      stack.push([i, worst], [worst, j]);
+    }
+  }
+  return pts.filter((_, i) => keep[i]);
+}

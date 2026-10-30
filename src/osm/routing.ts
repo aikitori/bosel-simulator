@@ -1,4 +1,4 @@
-import { haversine, Projection, type LatLon } from '../geo';
+import { haversine, Projection, type LatLon, type Vec2 } from '../geo';
 import { buildCourse, type Course, type RawRoute, type Roadside, type Surface } from './course';
 import type { OsmElement, OsmWay } from './overpass';
 import { parseScenery } from './scenery';
@@ -187,8 +187,50 @@ function shortestPath(g: RoadGraph, from: number, to: number): { nodes: number[]
 
 export interface RoutedLine {
   line: LatLon[];
-  infos: EdgeInfo[];
+  /** Belag und Breite je Abschnitt; fehlt bei OSRM-Routen, bis die Straßen geladen sind. */
+  infos?: EdgeInfo[];
   length: number;
+}
+
+/** Annahme für Abschnitte, zu denen keine OSM-Straße gefunden wurde: schmale Landstraße. */
+const DEFAULT_INFO: EdgeInfo = { halfWidth: 2.3, surface: 'asphalt', roadside: 'ditch' };
+
+/**
+ * Belag und Breite für jeden Routenabschnitt aus den OSM-Straßen in der Nähe übernehmen:
+ * je Abschnitt die nächstgelegene Straße, deren Richtung passt.
+ */
+function annotate(points: Vec2[], ways: OsmWay[], proj: Projection): EdgeInfo[] {
+  const segs: { a: Vec2; b: Vec2; info: EdgeInfo }[] = [];
+  for (const w of ways) {
+    const tags = w.tags ?? {};
+    if (!tags.highway || tags.area === 'yes') continue;
+    const info = infoOf(tags);
+    const pts = w.geometry.map((g) => proj.toLocal(g));
+    for (let i = 0; i < pts.length - 1; i++) segs.push({ a: pts[i], b: pts[i + 1], info });
+  }
+  return points.slice(0, -1).map((p, i) => {
+    const q = points[i + 1];
+    const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    let best: EdgeInfo | undefined;
+    let bestD = 20;
+    for (const sg of segs) {
+      const ex = sg.b.x - sg.a.x;
+      const ey = sg.b.y - sg.a.y;
+      const l2 = ex * ex + ey * ey;
+      if (l2 < 1e-6) continue;
+      // Richtung muss ungefähr passen (Kreuzungen nicht verwechseln)
+      const cos = Math.abs(((q.x - p.x) * ex + (q.y - p.y) * ey) / (len * Math.sqrt(l2)));
+      if (cos < 0.8) continue;
+      const t = Math.max(0, Math.min(1, ((mid.x - sg.a.x) * ex + (mid.y - sg.a.y) * ey) / l2));
+      const d = Math.hypot(mid.x - (sg.a.x + ex * t), mid.y - (sg.a.y + ey * t));
+      if (d < bestD) {
+        bestD = d;
+        best = sg.info;
+      }
+    }
+    return best ?? DEFAULT_INFO;
+  });
 }
 
 /** Route durch alle Wegpunkte; `undefined`, wenn ein Punkt nicht an einer Straße liegt. */
@@ -218,11 +260,13 @@ export function route(g: RoadGraph, waypoints: LatLon[]): RoutedLine | { error: 
 export function courseFromRoute(name: string, r: RoutedLine, sceneryElements: OsmElement[]): Course {
   const proj = new Projection(r.line[0]);
   const points = r.line.map((p) => proj.toLocal(p));
+  const roads = sceneryElements.filter((e): e is OsmWay => e.type === 'way' && !!e.tags?.highway);
+  const infos = r.infos ?? annotate(points, roads, proj);
   const raw: RawRoute = {
     points,
-    halfWidth: r.infos.map((i) => i.halfWidth),
-    surface: r.infos.map((i) => i.surface),
-    roadside: r.infos.map((i) => i.roadside),
+    halfWidth: infos.map((i) => i.halfWidth),
+    surface: infos.map((i) => i.surface),
+    roadside: infos.map((i) => i.roadside),
   };
   return buildCourse(name, r.line[0], raw, parseScenery(sceneryElements, proj, points));
 }
