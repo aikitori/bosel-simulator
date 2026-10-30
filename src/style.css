@@ -496,8 +496,8 @@ footer {
   top: 0;
   bottom: 0;
   /* grüner Bereich um den idealen Moment, gesetzt per --ideal */
-  left: calc(var(--ideal, 0.78) * 100% - 6%);
-  width: 12%;
+  left: calc(var(--ideal, 0.78) * 100% - 8.5%);
+  width: 17%;
   border-radius: 7px;
   background: linear-gradient(90deg, #f2c94c, #3fbf5a 30%, #3fbf5a 70%, #f2c94c);
 }

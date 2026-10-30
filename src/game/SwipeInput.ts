@@ -16,8 +16,8 @@ const WINDOW_MS = 110;
 /** Wie lange vor dem Loslassen der schnellste Moment der Geste noch zählt. */
 const RECENT_MS = 300;
 /** Bildschirmhöhen pro Sekunde für volle Kraft. */
-const FULL_SPEED = 4.2;
-const MIN_SPEED = 0.5;
+const FULL_SPEED = 2.8;
+const MIN_SPEED = 0.35;
 const YAW_FACTOR = 0.45;
 const MAX_YAW = 0.6;
 /** Krümmung der Geste (Bogenmaß) für vollen Drall; kleinere Krümmungen sind Zittern. */

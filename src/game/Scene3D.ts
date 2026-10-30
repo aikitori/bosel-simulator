@@ -17,7 +17,7 @@ const SKY = 0xb4d3ec;
 type Mode = 'idle' | 'intro' | 'aim' | 'runup' | 'flight' | 'settle';
 
 const RUN = 0.85;
-const SWING = 0.34;
+const SWING = 0.45;
 const TRAIL = 50;
 const ARROW_STEPS = 24;
 /** Idealer Abwurf: Arm knapp hinter dem tiefsten Punkt (Sekunden ab Anlaufbeginn). */

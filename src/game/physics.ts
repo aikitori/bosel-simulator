@@ -52,19 +52,19 @@ export function idealPitch(power: number): number {
  * zu früh → Kugel wird in den Boden geschlagen, zu spät → hoher Bogen, der kaum rollt.
  */
 export function pitchFromTiming(timing: number, power: number): number {
-  return idealPitch(power) + Math.max(-0.3, Math.min(0.9, timing * 1.8));
+  return idealPitch(power) + Math.max(-0.2, Math.min(0.6, timing * 1.1));
 }
 
 /** Zu früh hat der Arm noch nicht durchgezogen, zu spät bremst er schon: weniger Tempo. */
 export function speedFromTiming(timing: number): number {
-  return timing < 0 ? Math.max(0.5, 1 - 2.2 * -timing) : Math.max(0.65, 1 - 0.7 * timing);
+  return timing < 0 ? Math.max(0.6, 1 - 1.1 * -timing) : Math.max(0.75, 1 - 0.4 * timing);
 }
 
 export type TimingGrade = 'perfect' | 'good' | 'early' | 'late';
 
 export function gradeTiming(timing: number): TimingGrade {
-  if (Math.abs(timing) < 0.04) return 'perfect';
-  if (Math.abs(timing) < 0.1) return 'good';
+  if (Math.abs(timing) < 0.06) return 'perfect';
+  if (Math.abs(timing) < 0.14) return 'good';
   return timing < 0 ? 'early' : 'late';
 }
 
@@ -92,7 +92,7 @@ export interface ThrowResult {
 }
 
 export function launchSpeed(power: number): number {
-  return 6 + 16.5 * Math.max(0, Math.min(1, power));
+  return 8 + 18 * Math.max(0, Math.min(1, power));
 }
 
 /**
