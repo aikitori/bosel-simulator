@@ -109,6 +109,12 @@ body,
   text-align: left;
   font-weight: 500;
 }
+.btn small {
+  display: block;
+  font-weight: 400;
+  font-size: 0.8em;
+  opacity: 0.7;
+}
 .team-edit {
   display: grid;
   gap: 8px;
@@ -395,6 +401,10 @@ footer {
 .panel p {
   margin: 0;
   text-align: center;
+}
+.panel .record {
+  color: #f2a900;
+  font-weight: 700;
 }
 .panel table {
   border-collapse: collapse;

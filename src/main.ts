@@ -1,13 +1,48 @@
 import './style.css';
-import { loadAssets } from './game/assets';
-import { Game } from './game/Game';
-import { MapPicker, type Extras } from './map/MapPicker';
+import type { Resume } from './game/Game';
+import { isOver } from './game/rules';
+import type { Extras } from './map/MapPicker';
 import type { Course } from './osm/course';
 import { demoCourse } from './osm/demo';
-import { deleteCourse, loadCourses, loadSettings, saveCourse, saveSettings, TEAM_COLORS, type Settings } from './storage';
+import {
+  clearMatch,
+  courseKey,
+  deleteCourse,
+  loadCourses,
+  loadMatch,
+  loadRecords,
+  loadSettings,
+  saveCourse,
+  saveMatch,
+  saveSettings,
+  TEAM_COLORS,
+  type Settings,
+} from './storage';
+
+// Three.js und Leaflet werden erst geladen, wenn sie gebraucht werden – die Startseite ist sofort da.
 
 const app = document.getElementById('app')!;
-let current: { dispose(): void } | null = null;
+let current: { dispose(): void; back?(): void } | null = null;
+/** Zählt Bildschirmwechsel, damit ein noch ladender Bildschirm nicht über einem neueren erscheint. */
+let screen = 0;
+
+/**
+ * Zurück-Taste (Android) bzw. Browser-Zurück: Solange Spiel oder Karte offen sind, liegt ein
+ * zusätzlicher Verlaufseintrag oben, der sie abfängt – sonst würde die App einfach beendet.
+ */
+function trapBack(): void {
+  if (!history.state?.bosel) history.pushState({ bosel: true }, '');
+}
+
+function releaseBack(): void {
+  if (history.state?.bosel) history.back();
+}
+
+window.addEventListener('popstate', () => {
+  if (!current?.back) return;
+  history.pushState({ bosel: true }, '');
+  current.back();
+});
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
   const e = document.createElement(tag);
@@ -16,51 +51,89 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e;
 };
 
-function clear(): void {
+function clear(): number {
   current?.dispose();
   current = null;
   app.innerHTML = '';
+  return ++screen;
 }
 
-async function play(course: Course, extras?: Promise<Extras>): Promise<void> {
-  clear();
+interface PlayOptions {
+  demo?: boolean;
+  extras?: Promise<Extras>;
+  resume?: Resume;
+}
+
+async function play(course: Course, opts: PlayOptions = {}): Promise<void> {
+  const me = clear();
+  trapBack();
   const loading = el('div', 'loading', 'Lade Landschaft …');
   app.append(loading);
-  let assets;
+  current = { dispose: () => undefined, back: () => home() };
+  let game;
   try {
-    assets = await loadAssets();
+    const [{ Game }, { loadAssets }] = await Promise.all([import('./game/Game'), import('./game/assets')]);
+    game = { Game, assets: await loadAssets() };
   } catch (e) {
     console.error(e);
     loading.textContent = 'Modelle konnten nicht geladen werden.';
     return;
   }
+  if (me !== screen) return;
   loading.remove();
   const s = loadSettings();
-  current = new Game(
+  current = new game.Game(
     app,
     course,
     s.teams,
     s.order,
-    assets,
+    game.assets,
     {
-      rematch: () => play(course),
+      rematch: () => play(course, { demo: opts.demo }),
       menu: () => home(),
+      progress: (match, seed) => {
+        if (isOver(match)) clearMatch();
+        else saveMatch({ course: courseKey(course), demo: !!opts.demo, match, seed });
+      },
     },
-    extras,
+    opts.extras,
+    opts.resume,
   );
 }
 
-function pick(): void {
-  clear();
+async function pick(): Promise<void> {
+  const me = clear();
+  trapBack();
+  current = { dispose: () => undefined, back: () => home() };
+  const { MapPicker } = await import('./map/MapPicker');
+  if (me !== screen) return;
   current = new MapPicker(
     app,
     (course, extras) => {
       saveCourse(course);
-      void play(course, extras);
+      void play(course, { extras });
     },
     () => home(),
   );
+  current.back = () => home();
 }
+
+/** Gespeicherte, noch nicht beendete Partie samt Strecke – sofern die Strecke noch da ist. */
+function resumable(): { course: Course; demo: boolean; resume: Resume } | undefined {
+  const saved = loadMatch();
+  if (!saved || isOver(saved.match)) return undefined;
+  const course = saved.demo ? demoCourse() : loadCourses().find((c) => courseKey(c) === saved.course)?.course;
+  return course && { course, demo: saved.demo, resume: { match: saved.match, seed: saved.seed } };
+}
+
+/** Button mit zweiter, kleiner Zeile. */
+function labeled(cls: string, title: string, sub?: string): HTMLButtonElement {
+  const b = el('button', cls, title);
+  if (sub) b.append(el('small', '', sub));
+  return b;
+}
+
+const km = (m: number) => `${(m / 1000).toLocaleString('de-DE', { maximumFractionDigits: 1 })} km`;
 
 function teamEditor(settings: Settings, i: 0 | 1): HTMLElement {
   const t = settings.teams[i];
@@ -102,17 +175,31 @@ function teamEditor(settings: Settings, i: 0 | 1): HTMLElement {
 
 function home(): void {
   clear();
+  releaseBack();
   const settings = loadSettings();
+  const records = loadRecords();
+  const record = (c: Course) => {
+    const r = records[courseKey(c)];
+    return r ? ` · Rekord ${r.throws} Würfe` : '';
+  };
   const page = el('div', 'home');
   const head = el('header');
   head.append(el('div', 'logo', '●'), el('h1', '', 'Boßel-Simulator'), el('p', 'muted', 'Zwei Teams, eine Straße, so wenig Würfe wie möglich.'));
   page.append(head);
 
   const start = el('section', 'card');
-  const mapBtn = el('button', 'btn primary big', 'Strecke auf der Karte wählen');
-  mapBtn.addEventListener('click', pick);
-  const demoBtn = el('button', 'btn big', 'Übungsstrecke');
-  demoBtn.addEventListener('click', () => play(demoCourse()));
+  const open = resumable();
+  if (open) {
+    const [a, b] = open.resume.match.teams;
+    const go = labeled('btn primary big', 'Partie fortsetzen', `${open.course.name} · ${a.setup.name} ${a.throws} : ${b.throws} ${b.setup.name}`);
+    go.addEventListener('click', () => play(open.course, { demo: open.demo, resume: open.resume }));
+    start.append(go);
+  }
+  const mapBtn = el('button', open ? 'btn big' : 'btn primary big', 'Strecke auf der Karte wählen');
+  mapBtn.addEventListener('click', () => void pick());
+  const demo = demoCourse();
+  const demoBtn = labeled('btn big', 'Übungsstrecke', `${km(demo.length)}${record(demo)}`);
+  demoBtn.addEventListener('click', () => play(demo, { demo: true }));
   start.append(mapBtn, demoBtn);
   page.append(start);
 
@@ -122,7 +209,7 @@ function home(): void {
     list.append(el('h2', '', 'Gespeicherte Strecken'));
     for (const c of saved) {
       const row = el('div', 'course-row');
-      const go = el('button', 'btn course', c.name);
+      const go = labeled('btn course', c.name, `${km(c.length)}${record(c.course)}`);
       go.addEventListener('click', () => play(c.course));
       const del = el('button', 'btn icon', '✕');
       del.title = 'Löschen';

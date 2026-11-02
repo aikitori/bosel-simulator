@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { currentPlayer, isOver, newMatch, recordThrow, winner, type TeamSetup } from '../src/game/rules';
+import { addPenalty, currentPlayer, decidedEarly, isOver, newMatch, recordThrow, winner, type TeamSetup } from '../src/game/rules';
 
 const teams = (): [TeamSetup, TeamSetup] => [
   { name: 'Rot', color: '#d33', players: ['Anna', 'Ben'] },
@@ -33,5 +33,26 @@ describe('Spielregeln', () => {
     recordThrow(m, { s: 100, d: 0 }, 40, 'finish');
     expect(isOver(m)).toBe(true);
     expect(winner(m)).toBe(0);
+  });
+
+  it('endet vorzeitig, wenn die zweite Mannschaft nicht mehr gewinnen kann', () => {
+    const m = newMatch(teams(), 'alternate');
+    recordThrow(m, { s: 100, d: 0 }, 100, 'finish');
+    expect(isOver(m)).toBe(false);
+    recordThrow(m, { s: 40, d: 0 }, 40, 'road');
+    // Gleich viele Würfe, aber noch nicht im Ziel: verloren, ohne weiterwerfen zu müssen
+    expect(isOver(m)).toBe(true);
+    expect(decidedEarly(m)).toBe(true);
+    expect(winner(m)).toBe(0);
+  });
+
+  it('ein Strafwurf kann die Partie entscheiden', () => {
+    const m = newMatch(teams(), 'alternate');
+    recordThrow(m, { s: 50, d: 0 }, 50, 'road');
+    recordThrow(m, { s: 30, d: 0 }, 30, 'ditch');
+    recordThrow(m, { s: 100, d: 0 }, 50, 'finish');
+    expect(isOver(m)).toBe(false);
+    addPenalty(m, 1);
+    expect(isOver(m)).toBe(true);
   });
 });

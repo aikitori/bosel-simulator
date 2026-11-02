@@ -60,8 +60,21 @@ export function currentPlayer(m: Match): string {
   return players[t.nextPlayer % players.length];
 }
 
+/**
+ * Vorbei, wenn beide im Ziel sind – oder wenn die Mannschaft, die noch unterwegs ist, schon so
+ * viele Würfe hat wie die andere bis ins Ziel brauchte: Gewinnen kann sie dann nicht mehr.
+ */
 export function isOver(m: Match): boolean {
-  return m.teams.every((t) => t.finished);
+  const [a, b] = m.teams;
+  if (a.finished && b.finished) return true;
+  if (a.finished) return b.throws >= a.throws;
+  if (b.finished) return a.throws >= b.throws;
+  return false;
+}
+
+/** Vorzeitig entschieden: eine Mannschaft hat das Ziel nicht mehr erreichen müssen. */
+export function decidedEarly(m: Match): boolean {
+  return isOver(m) && !m.teams.every((t) => t.finished);
 }
 
 /** Trägt einen Wurf ein und bestimmt, wer als Nächstes dran ist. */
@@ -98,6 +111,7 @@ export function addPenalty(m: Match, team: number): void {
 /** Sieger-Index oder `null` bei Gleichstand. */
 export function winner(m: Match): number | null {
   const [a, b] = m.teams;
+  if (a.finished !== b.finished) return a.finished ? 0 : 1;
   if (a.throws === b.throws) return null;
   return a.throws < b.throws ? 0 : 1;
 }

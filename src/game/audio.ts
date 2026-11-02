@@ -18,6 +18,12 @@ class Sound {
     } catch {
       // ohne Speicher bleibt der Ton an
     }
+    // App im Hintergrund (Android: Home-Taste, Bildschirm aus): kein Rollgeräusch weiterlaufen lassen
+    document.addEventListener('visibilitychange', () => {
+      if (!this.ctx) return;
+      if (document.hidden) void this.ctx.suspend();
+      else void this.ctx.resume();
+    });
   }
 
   setEnabled(on: boolean): void {

@@ -2,10 +2,10 @@ import type { Course } from '../osm/course';
 import { pointAt } from '../osm/course';
 import { OBSTACLE_NAME, placeObstacles, type Obstacle } from './obstacles';
 import { gradeTiming, simulateThrow, type Outcome, type ThrowInput, type TimingGrade } from './physics';
-import { addPenalty, currentPlayer, isOver, newMatch, recordThrow, winner, type Match, type Order, type TeamSetup } from './rules';
+import { addPenalty, currentPlayer, decidedEarly, isOver, newMatch, recordThrow, winner, type Match, type Order, type TeamSetup } from './rules';
 import type { Assets } from './assets';
 import type { Extras } from '../map/MapPicker';
-import { saveCourse } from '../storage';
+import { courseKey, loadRecords, saveCourse, submitRecord } from '../storage';
 import { sound } from './audio';
 import { kescher } from './Kescher';
 import { IDEAL_RELEASE, Scene3D } from './Scene3D';
@@ -14,6 +14,14 @@ import { SwipeInput } from './SwipeInput';
 export interface GameEnd {
   rematch: () => void;
   menu: () => void;
+  /** Nach jedem Wurf: Spielstand merken (Hindernisse ergeben sich aus `seed`). */
+  progress: (match: Match, seed: number) => void;
+}
+
+/** Gespeicherte Partie, an der es weitergeht. */
+export interface Resume {
+  match: Match;
+  seed: number;
 }
 
 const OUTCOME_TEXT: Record<Outcome, string> = {
@@ -52,6 +60,7 @@ export class Game {
   private readonly toast: HTMLElement;
   private readonly minimap: HTMLCanvasElement;
   private readonly obstacles: Obstacle[];
+  private readonly seed: number;
   private readonly timingBar: HTMLElement;
   private lastAim: ThrowInput | null = null;
   private readonly onResize = () => {
@@ -67,11 +76,14 @@ export class Game {
     assets: Assets,
     private readonly end: GameEnd,
     extras?: Promise<Extras>,
+    resume?: Resume,
   ) {
-    this.match = newMatch(teams, order);
+    this.match = resume?.match ?? newMatch(teams, order);
+    if (resume) teams = [this.match.teams[0].setup, this.match.teams[1].setup];
+    this.seed = resume?.seed ?? (Math.random() * 2 ** 31) | 0;
     // Im Dev-Modus lässt sich die Dichte per ?hindernisse=200 hochdrehen (zum Ansehen)
     const density = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('hindernisse')) || undefined : undefined;
-    this.obstacles = placeObstacles(course, (Math.random() * 2 ** 31) | 0, density);
+    this.obstacles = placeObstacles(course, this.seed, density);
     this.root = el('div', 'game');
     const canvas = el('canvas', 'game-canvas');
     this.root.append(canvas);
@@ -102,8 +114,11 @@ export class Game {
 
     this.scene = new Scene3D(canvas, course, assets, [teams[0].color, teams[1].color]);
     this.scene.setObstacles(this.obstacles);
-    this.scene.hideBall(0, true);
-    this.scene.hideBall(1, true);
+    // Fortgesetzte Partie: Kugeln liegen schon dort, wo sie zuletzt hingerollt sind
+    this.match.teams.forEach((t, i) => {
+      this.scene.setBall(i, t);
+      this.scene.hideBall(i, t.throws === 0);
+    });
     this.input = new SwipeInput(
       canvas,
       (aim) => {
@@ -135,7 +150,7 @@ export class Game {
       (e) => console.warn('Bäume/Hecken nicht geladen', e),
     );
     this.turnLabel.innerHTML = '';
-    this.turnLabel.append(course.name, el('small', '', ' · antippen zum Starten'));
+    this.turnLabel.append(course.name, el('small', '', resume ? ' · antippen zum Weiterspielen' : ' · antippen zum Starten'));
     this.drawMinimap();
     this.turnLabel.classList.add('show');
     this.scene.intro(() => this.nextTurn());
@@ -149,6 +164,15 @@ export class Game {
     this.input.dispose();
     this.scene.dispose();
     this.root.remove();
+  }
+
+  /** Zurück-Taste (Android/Browser): Pause-Menü auf und zu, nach Spielende ins Hauptmenü. */
+  back(): void {
+    if (this.root.querySelector('.kescher')) return;
+    if (this.root.querySelector('.panel.result')) return this.end.menu();
+    const open = this.root.querySelector('.overlay');
+    if (open) open.remove();
+    else this.openMenu();
   }
 
   private nextTurn(): void {
@@ -220,6 +244,7 @@ export class Game {
       this.updateHud();
       const next = () => {
         this.updateHud();
+        this.end.progress(m, this.seed);
         if (isOver(m)) setTimeout(() => this.showResult(), 1800);
         else setTimeout(() => this.nextTurn(), 1500);
       };
@@ -333,12 +358,26 @@ export class Game {
     o.append(box);
   }
 
+  /** Streckenrekord: wenigste Würfe bis ins Ziel, über alle Partien auf dieser Strecke. */
+  private recordLine(w: number | null): HTMLElement {
+    const m = this.match;
+    const best = w ?? 0;
+    const throws = m.teams[best].throws;
+    const names = w === null ? m.teams.map((t) => t.setup.name).join(' & ') : m.teams[w].setup.name;
+    const before = loadRecords()[courseKey(this.course)];
+    if (submitRecord(this.course, throws, names)) {
+      return el('p', 'record', before ? `Neuer Streckenrekord! (bisher ${before.throws} Würfe)` : 'Erster Streckenrekord aufgestellt!');
+    }
+    return el('p', 'muted', `Streckenrekord: ${before.throws} Würfe · ${before.team}`);
+  }
+
   private showResult(): void {
     const m = this.match;
     const w = winner(m);
     const o = this.overlay();
     const box = el('div', 'panel result');
     box.append(el('h2', '', w === null ? 'Unentschieden!' : `${m.teams[w].setup.name} gewinnt!`));
+    if (w !== null && decidedEarly(m)) box.append(el('p', 'muted', `${m.teams[1 - w].setup.name} kann nicht mehr gewinnen – Partie vorzeitig beendet.`));
     const table = el('table');
     const row = (label: string, f: (i: number) => string) => {
       const tr = el('tr');
@@ -353,11 +392,12 @@ export class Game {
       head.append(th);
     });
     table.append(head);
-    row('Würfe', (i) => `${m.teams[i].throws}`);
+    row('Würfe', (i) => (m.teams[i].finished ? `${m.teams[i].throws}` : `${m.teams[i].throws}, nicht im Ziel`));
     row('Weitester Wurf', (i) => `${Math.round(m.teams[i].longest)} m`);
     row('Im Graben', (i) => `${m.teams[i].ditches}`);
     row('Strafwürfe', (i) => `${m.teams[i].penalties}`);
     box.append(el('p', 'muted', `${this.course.name} · ${(this.course.length / 1000).toFixed(2)} km`), table);
+    box.append(this.recordLine(w));
     const again = el('button', 'btn primary', 'Revanche');
     again.addEventListener('click', () => this.end.rematch());
     const menu = el('button', 'btn', 'Hauptmenü');

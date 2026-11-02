@@ -33,3 +33,7 @@ Boßeln auf echten Straßen: Strecke aus OpenStreetMap wählen, zwei Teams werfe
 - Im Dev-Modus löst `window.boselThrow({ yaw, power })` einen Wurf aus (für Browser-Tests;
   Headless-Chromium rendert zu langsam für echte Wischgesten), `window.boselKescher()` startet das
   Minispiel, `?hindernisse=400` erhöht die Hindernisdichte.
+- `main.ts` lädt `Game`/Assets und `MapPicker` per `import()` nach (Three.js/Leaflet nicht im Start-Bundle).
+  Die Zurück-Taste fängt ein zusätzlicher Verlaufseintrag ab (`trapBack`), solange Spiel oder Karte offen sind.
+- Laufende Partie liegt nach jedem Wurf in `localStorage` (`saveMatch`, nur Streckenschlüssel + Seed für die
+  Hindernisse; die Strecke selbst kommt aus der Streckenliste bzw. `demoCourse()`). Rekorde je Strecke: `submitRecord`.

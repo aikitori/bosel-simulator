@@ -25,7 +25,8 @@
 - **Kloot in de Sloot:** if the ball lands in the ditch, fish it out with the net in a mini-game – or take a penalty throw.
 - **Feel:** synthesized sound (throw, bounces, rolling, splash), vibration, ball trail, fly-over of the course before each match.
 - **Two teams on one device:** take turns or play the traditional way (whoever is behind throws). Optional player names per team.
-- **Offline practice course** and saved routes.
+- **Offline practice course** and saved routes with a best-score record per route.
+- **Pick up where you left off:** the match is saved after every throw; once the trailing team can no longer win, the match ends early.
 
 ## How to play
 

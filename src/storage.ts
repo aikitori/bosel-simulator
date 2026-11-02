@@ -1,5 +1,5 @@
 import type { Course } from './osm/course';
-import type { Order, TeamSetup } from './game/rules';
+import type { Match, Order, TeamSetup } from './game/rules';
 
 /** Einstellungen und gespeicherte Strecken im Browser (localStorage). */
 
@@ -20,6 +20,8 @@ const DEFAULTS: Settings = {
 
 const KEY_SETTINGS = 'bosel.settings';
 const KEY_COURSES = 'bosel.courses';
+const KEY_MATCH = 'bosel.match';
+const KEY_RECORDS = 'bosel.records';
 const MAX_COURSES = 8;
 
 function read<T>(key: string): T | undefined {
@@ -88,4 +90,55 @@ export function deleteCourse(id: string): void {
     KEY_COURSES,
     loadCourses().filter((c) => c.id !== id),
   );
+}
+
+/** Strecken gelten als gleich, wenn Name und Länge (auf den Meter) passen. */
+export function courseKey(course: { name: string; length: number }): string {
+  return `${course.name}|${Math.round(course.length)}`;
+}
+
+/** Laufende Partie, damit sie nach Neustart der App weitergeht. Die Strecke liegt in der Streckenliste. */
+export interface SavedMatch {
+  course: string;
+  demo: boolean;
+  match: Match;
+  seed: number;
+}
+
+export function saveMatch(m: SavedMatch): void {
+  write(KEY_MATCH, m);
+}
+
+export function loadMatch(): SavedMatch | undefined {
+  const m = read<SavedMatch>(KEY_MATCH);
+  return m?.match?.teams?.length === 2 ? m : undefined;
+}
+
+export function clearMatch(): void {
+  try {
+    localStorage.removeItem(KEY_MATCH);
+  } catch {
+    // egal
+  }
+}
+
+/** Bestleistung je Strecke: wenigste Würfe bis ins Ziel. */
+export interface CourseRecord {
+  throws: number;
+  team: string;
+  date: string;
+}
+
+export function loadRecords(): Record<string, CourseRecord> {
+  return read<Record<string, CourseRecord>>(KEY_RECORDS) ?? {};
+}
+
+/** Trägt ein Ergebnis ein; `true`, wenn es ein neuer Rekord ist. */
+export function submitRecord(course: { name: string; length: number }, throws: number, team: string): boolean {
+  const all = loadRecords();
+  const key = courseKey(course);
+  if (all[key] && all[key].throws <= throws) return false;
+  all[key] = { throws, team, date: new Date().toISOString().slice(0, 10) };
+  write(KEY_RECORDS, all);
+  return true;
 }
